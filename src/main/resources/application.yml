@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: ms-pims-inventory-service
+
+  config:
+    import:
+      - "optional:consul:"
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
