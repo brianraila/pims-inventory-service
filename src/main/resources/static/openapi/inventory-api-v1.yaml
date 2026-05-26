@@ -1,0 +1,655 @@
+openapi: 3.0.3
+info:
+  title: PMIS  — Inventory API
+  description: |
+    REST API for Inventory Management (Safaricom Healthcare PMIS). Operational deployment
+    aligns with the API gateway prefix **/api/v1**; `servers[0].url` should be appended
+    before each path (for example `/inventory/products`).
+  version: 1.1.0
+  contact:
+    name: PMIS Engineering
+
+servers:
+  - url: https://api.pmis.safaricom.com/api/v1
+    description: Production (gateway)
+  - url: https://api-staging.pmis.safaricom.com/api/v1
+    description: Staging (gateway)
+  - url: http://localhost:{port}/api/v1
+    description: Local inventory service
+    variables:
+      port:
+        default: "8080"
+
+tags:
+  - name: Products
+  - name: Batches
+  - name: Stock Adjustments
+  - name: Purchase Orders
+  - name: Terminology Service
+  - name: Manufacturers
+
+security:
+  - BearerAuth: []
+
+paths:
+  /inventory/products:
+    get:
+      tags: [Products]
+      operationId: listProducts
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            $ref: '#/components/schemas/ProductCategory'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ProductStatus'
+        - name: manufacturer_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
+    post:
+      tags: [Products]
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '409':
+          description: Duplicate PPB/NDC
+
+  /inventory/products/drafts:
+    post:
+      tags: [Products]
+      operationId: saveProductDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductDraftRequest'
+      responses:
+        '201':
+          description: Draft saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDraft'
+
+  /inventory/products/drafts/{draft_id}:
+    get:
+      tags: [Products]
+      operationId: getProductDraft
+      parameters:
+        - $ref: '#/components/parameters/DraftIdParam'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDraft'
+    patch:
+      tags: [Products]
+      operationId: updateProductDraft
+      parameters:
+        - $ref: '#/components/parameters/DraftIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductDraftRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDraft'
+
+  /inventory/products/{product_id}:
+    get:
+      tags: [Products]
+      operationId: getProduct
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+    patch:
+      tags: [Products]
+      operationId: updateProduct
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+    delete:
+      tags: [Products]
+      operationId: deleteProduct
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+      responses:
+        '204':
+          description: Deleted
+
+  /inventory/products/{product_id}/batches:
+    get:
+      tags: [Batches]
+      operationId: listBatches
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/BatchStatus'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [fefo, lifo, created_at]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchListResponse'
+    post:
+      tags: [Batches]
+      operationId: addBatch
+      summary: Add batch (JSON) or bulk CSV (multipart)
+      description: |
+        **application/json** → response body is a single `Batch`.
+
+        **multipart/form-data** (`file` required) → response body is **`BatchBulkUploadResult`**
+        (manifest of created rows + per-row failures).
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBatchRequest'
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: JSON returns **Batch**; CSV returns **BatchBulkUploadResult**
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Batch'
+                  - $ref: '#/components/schemas/BatchBulkUploadResult'
+
+  /inventory/products/{product_id}/batches/{batch_id}:
+    get:
+      tags: [Batches]
+      operationId: getBatch
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+        - $ref: '#/components/parameters/BatchIdParam'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+    delete:
+      tags: [Batches]
+      operationId: removeBatch
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+        - $ref: '#/components/parameters/BatchIdParam'
+      responses:
+        '204':
+          description: Removed
+
+  /inventory/products/{product_id}/adjustments:
+    get:
+      tags: [Stock Adjustments]
+      operationId: listAdjustments
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdjustmentListResponse'
+    post:
+      tags: [Stock Adjustments]
+      operationId: adjustStock
+      parameters:
+        - $ref: '#/components/parameters/ProductIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockAdjustmentRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockAdjustment'
+
+  /terminology/search:
+    get:
+      tags: [Terminology Service]
+      operationId: searchTerminology
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+        - name: manufacturer_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [rxnorm, ppb_ndc, all]
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminologySearchResponse'
+
+  /terminology/products/{terminology_id}:
+    get:
+      tags: [Terminology Service]
+      operationId: getTerminologyProduct
+      parameters:
+        - name: terminology_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminologyProduct'
+
+  /manufacturers:
+    get:
+      tags: [Manufacturers]
+      operationId: listManufacturers
+      parameters:
+        - $ref: '#/components/parameters/LimitParam'
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Manufacturer'
+
+  /inventory/purchase-orders:
+    get:
+      tags: [Purchase Orders]
+      operationId: listPurchaseOrders
+      summary: List purchase orders for the tenant
+      description: |
+        Response bodies use **camelCase** JSON properties (matches runtime Java records).
+        Send **`X-Tenant-Id`** when the JWT does not carry tenant context (see implementation map).
+      responses:
+        '200':
+          description: Purchase orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PurchaseOrderResponse'
+    post:
+      tags: [Purchase Orders]
+      operationId: createPurchaseOrder
+      summary: Create a purchase order in ERPNext
+      description: Request body uses **camelCase** JSON properties.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePurchaseOrderRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrderResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ProductIdParam:
+      name: product_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BatchIdParam:
+      name: batch_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DraftIdParam:
+      name: draft_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+
+  schemas:
+    ProductCategory:
+      type: string
+      enum:
+        - Antibiotics
+        - Analgesics
+        - Diabetes
+        - Cardiovascular
+        - Gastrointestinal
+        - Antifungals
+        - Antivirals
+        - Vitamins
+        - Other
+
+    ProductStatus:
+      type: string
+      enum:
+        [draft, available, low_stock, out_of_stock, controlled, recalled, expiring_soon, unknown]
+
+    BatchStatus:
+      type: string
+      enum:
+        [available, active, expired, recalled, quarantine, unavailable]
+
+    Pagination:
+      type: object
+      properties:
+        page: {type: integer}
+        limit: {type: integer}
+        total: {type: integer}
+        total_pages: {type: integer}
+
+    Manufacturer:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        country: {type: string, nullable: true}
+        is_active: {type: boolean}
+
+    DraftData:
+      description: >-
+        Partial **CreateProductRequest** snapshot; omit properties not yet populated.
+        Mirrors CreateProduct field names (snake_case).
+      type: object
+      additionalProperties: true
+
+    ProductDraftRequest:
+      type: object
+      required:
+        - wizard_step
+      properties:
+        wizard_step:
+          type: integer
+          enum: [1, 2, 3, 4]
+        data:
+          $ref: '#/components/schemas/DraftData'
+
+    CreateProductRequest:
+      type: object
+      properties:
+        product_name: {type: string}
+        generic_name: {type: string}
+        manufacturer_id: {type: string, format: uuid, nullable: true}
+        category:
+          $ref: '#/components/schemas/ProductCategory'
+
+    ProductDraft:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        wizard_step: {type: integer, enum: [1,2,3,4]}
+        data:
+          $ref: '#/components/schemas/CreateProductRequest'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpdateProductRequest:
+      type: object
+      additionalProperties: true
+
+    ProductSummary:
+      type: object
+      additionalProperties: true
+
+    ProductDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProductSummary'
+        - type: object
+          additionalProperties: true
+
+    ProductListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductSummary'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Batch:
+      type: object
+      additionalProperties: true
+
+    CreateBatchRequest:
+      type: object
+      additionalProperties: true
+
+    BatchListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Batch'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    BatchBulkUploadResult:
+      type: object
+      properties:
+        total_rows: {type: integer}
+        success_count: {type: integer}
+        error_count: {type: integer}
+        errors:
+          type: array
+          items:
+            type: object
+        created_batches:
+          type: array
+          items:
+            $ref: '#/components/schemas/Batch'
+
+    StockAdjustmentRequest:
+      type: object
+      additionalProperties: true
+
+    StockAdjustment:
+      type: object
+      additionalProperties: true
+
+    AdjustmentListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockAdjustment'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    PurchaseOrderLineItem:
+      type: object
+      required: [itemCode, qty]
+      properties:
+        itemCode:
+          type: string
+          description: ERPNext Item code
+        qty:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+        rate:
+          type: number
+          format: double
+          description: Unit rate (optional)
+
+    CreatePurchaseOrderRequest:
+      type: object
+      required: [supplier, items]
+      properties:
+        supplier:
+          type: string
+          description: ERPNext Supplier document name
+        transactionDate:
+          type: string
+          description: Transaction date YYYY-MM-DD
+        scheduleDate:
+          type: string
+          description: Expected delivery date YYYY-MM-DD
+        notes:
+          type: string
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PurchaseOrderLineItem'
+
+    PurchaseOrderResponse:
+      type: object
+      properties:
+        id: { type: string, description: ERPNext Purchase Order name }
+        poNumber: { type: string }
+        supplier: { type: string }
+        orderDate: { type: string }
+        expectedDate: { type: string }
+        receivedDate: { type: string, nullable: true }
+        status: { type: string }
+        items: { type: integer, description: Line item count }
+        totalAmount: { type: number, format: double }
+
+    TerminologySearchResponse:
+      type: object
+      additionalProperties: true
+
+    TerminologyProduct:
+      type: object
+      additionalProperties: true
+
+    Error:
+      type: object
+      properties:
+        code: {type: string}
+        message: {type: string}
+        details:
+          type: object
+          nullable: true

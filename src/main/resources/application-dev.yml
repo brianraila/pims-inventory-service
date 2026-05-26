@@ -1,13 +1,20 @@
 spring:
-  application:
-    name: ms-pims-inventory-service
+  cloud:
+    consul:
+      enabled: false
+      discovery:
+        enabled: false
+        register: false
+      config:
+        enabled: false
 
-  config:
-    import:
-      - "optional:consul:"
+server:
+  port: 8086
 
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
+erpnext:
+  wrapper:
+    url: http://localhost:8083
+    tenant-id: erp1
 
 # Canonical REST contract: classpath static/openapi/inventory-api-v1.yaml (also linked in Swagger UI).
 # Generated /v3/api-docs is for convenience; external publishers should prefer the versioned YAML.

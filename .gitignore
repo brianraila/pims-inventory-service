@@ -1,0 +1,46 @@
+# Maven build output
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Compiled class files
+*.class
+
+application-prod.yml
+application-uat.yml
+# Log files
+*.log
+
+# JAR/WAR/EAR (only ignore loose ones, not target output)
+*.jar
+*.war
+*.ear
+
+# Spring Boot devtools
+.spring-boot-devtools.properties
+
+# Environment
+.env
+.env.*
+!.env.example

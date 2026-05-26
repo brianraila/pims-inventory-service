@@ -1,0 +1,77 @@
+package ke.co.safaricom.pims.inventory.erpnext;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+/**
+ * Loose representation of common ERPNext DocType fields.
+ * Services deserialise into this and mappers project to clean DTOs.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+public record ErpNextDoc(
+
+        // --- common ---
+        String name,
+        String owner,
+        @JsonProperty("creation") String creation,
+        @JsonProperty("modified") String modified,
+        @JsonProperty("docstatus") Integer docstatus,
+
+        // --- Item ---
+        @JsonProperty("item_name") String itemName,
+        @JsonProperty("item_group") String itemGroup,
+        @JsonProperty("stock_uom") String stockUom,
+        @JsonProperty("description") String description,
+        @JsonProperty("disabled") Integer disabled,
+        @JsonProperty("is_stock_item") Integer isStockItem,
+        @JsonProperty("reorder_levels") java.util.List<java.util.Map<String, Object>> reorderLevels,
+
+        // --- Item (PMIS custom columns) ---
+        @JsonProperty("custom_pims_ppb_code") String customPimsPpbCode,
+        @JsonProperty("custom_pims_ndc_code") String customPimsNdcCode,
+        @JsonProperty("custom_pims_regulatory_status") String customPimsRegulatoryStatus,
+        @JsonProperty("custom_pims_strength") String customPimsStrength,
+        @JsonProperty("custom_pims_dosage_form") String customPimsDosageForm,
+        @JsonProperty("custom_pims_terminology_source") String customPimsTerminologySource,
+        @JsonProperty("custom_pims_terminology_id") String customPimsTerminologyId,
+        @JsonProperty("custom_pims_additional_notes") String customPimsAdditionalNotes,
+        @JsonProperty("custom_pims_manufacturer_uuid") String customPimsManufacturerUuid,
+        @JsonProperty("custom_pims_supplier") String customPimsSupplier,
+        @JsonProperty("custom_pims_unit_of_measure") String customPimsUnitOfMeasure,
+        @JsonProperty("custom_pims_reorder_level") Double customPimsReorderLevel,
+        @JsonProperty("custom_pims_maximum_stock") Double customPimsMaximumStock,
+        @JsonProperty("custom_pims_controlled_substance") Integer customPimsControlledSubstance,
+        @JsonProperty("custom_pims_controlled_schedule") String customPimsControlledSchedule,
+        @JsonProperty("custom_pims_cold_chain_required") Integer customPimsColdChainRequired,
+        @JsonProperty("custom_pims_photosensitive") Integer customPimsPhotosensitive,
+        @JsonProperty("custom_pims_photosensitive_shelf_life_months") Integer customPimsPhotosensitiveShelfLifeMonths,
+        @JsonProperty("custom_pims_generic_name") String customPimsGenericName,
+
+        // --- Bin (current stock per warehouse) ---
+        @JsonProperty("item_code") String itemCode,
+        @JsonProperty("warehouse") String warehouse,
+        @JsonProperty("actual_qty") Double actualQty,
+        @JsonProperty("reserved_qty") Double reservedQty,
+
+        // --- Batch ---
+        @JsonProperty("batch_id") String batchId,
+        @JsonProperty("expiry_date") String expiryDate,
+        @JsonProperty("manufacturing_date") String manufacturingDate,
+        @JsonProperty("supplier") String supplier,
+
+        // --- Stock Entry ---
+        @JsonProperty("stock_entry_type") String stockEntryType,
+        @JsonProperty("purpose") String purpose,
+        @JsonProperty("posting_date") String postingDate,
+        @JsonProperty("remarks") String remarks,
+        @JsonProperty("from_warehouse") String fromWarehouse,
+        @JsonProperty("to_warehouse") String toWarehouse,
+        @JsonProperty("items") java.util.List<java.util.Map<String, Object>> items,
+
+        // --- Purchase Order ---
+        @JsonProperty("status") String status,
+        @JsonProperty("transaction_date") String transactionDate,
+        @JsonProperty("schedule_date") String scheduleDate,
+        @JsonProperty("grand_total") Double grandTotal,
+        @JsonProperty("items_count") Integer itemsCount
+) {}
