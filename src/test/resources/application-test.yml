@@ -1,9 +1,4 @@
 spring:
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.r2dbc.R2dbcAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.r2dbc.R2dbcDataAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.r2dbc.R2dbcRepositoriesAutoConfiguration
   cloud:
     consul:
       enabled: false
@@ -16,3 +11,8 @@ spring:
       resourceserver:
         jwt:
           jwk-set-uri: http://localhost:9999
+
+erpnext:
+  domain: test.local
+  api-key: ${ERPNEXT_API_KEY:}
+  api-secret: ${ERPNEXT_API_SECRET:}

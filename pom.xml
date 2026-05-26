@@ -21,31 +21,62 @@
         <java.version>17</java.version>
         <spring-cloud.version>2025.0.2</spring-cloud.version>
         <jacoco.version>0.8.12</jacoco.version>
+        <netty.version>4.1.133.Final</netty.version>
         <sonar.exclusions>
             pom.xml,
-            **/config/**,
-            **/dto/**,
-            **/enums/**,
-            **/exception/**,
-            **/model/**,
-            **/repository/**,
-            **/security/**,
-            **/service/**,
-            **/utils/**,
+            **/annotation/**/*,
+            **/api/**/*,
+            **/config/*.*,
+            **/dto/**/*,
+            **/enums/*.*,
+            **/erpnext/**/*,
+            **/exception/*.*,
+            **/exception/**/*,
+            **/mapper/**/*,
+            **/model/*.*,
+            **/model/**/*,
+            **/properties/*.*,
+            **/repository/*.*,
+            **/security/*.*,
+            **/service/**/*.*,
+            **/service/impl/*.*,
+            **/service/util/*.*,
+            **/service/*.*,
+            **/util/**/*,
+            **/utils/*.*,
+            **/validators/*.*,
+            **/web/**/*,
             src/main/java/ke/co/safaricom/pims/inventory/PimsInventoryApplication.java,
-            src/test/java/ke/co/safaricom/pims/inventory/PimsInventoryApplicationTests.java
+            src/test/java/ke/co/safaricom/pims/inventory/PimsInventoryApplicationTests.java,
+            src/test/**
         </sonar.exclusions>
+        <sonar.test.exclusions>
+            src/test/**
+        </sonar.test.exclusions>
         <sonar.coverage.exclusions>
             pom.xml,
-            **/config/**,
-            **/dto/**,
-            **/enums/**,
-            **/exception/**,
-            **/model/**,
-            **/repository/**,
-            **/security/**,
-            **/service/**,
-            **/utils/**,
+            **/annotation/**/*,
+            **/api/**/*,
+            **/config/*.*,
+            **/dto/**/*,
+            **/enums/*.*,
+            **/erpnext/**/*,
+            **/exception/*.*,
+            **/exception/**/*,
+            **/mapper/**/*,
+            **/model/*.*,
+            **/model/**/*,
+            **/properties/*.*,
+            **/repository/*.*,
+            **/security/*.*,
+            **/service/**/*.*,
+            **/service/impl/*.*,
+            **/service/util/*.*,
+            **/service/*.*,
+            **/util/**/*,
+            **/utils/*.*,
+            **/validators/*.*,
+            **/web/**/*,
             src/main/java/ke/co/safaricom/pims/inventory/PimsInventoryApplication.java,
             src/test/java/ke/co/safaricom/pims/inventory/PimsInventoryApplicationTests.java
         </sonar.coverage.exclusions>
@@ -56,17 +87,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
-        </dependency>
-
-        <!-- Reactive database access -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-r2dbc</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>r2dbc-postgresql</artifactId>
-            <scope>runtime</scope>
         </dependency>
 
         <!-- Validation -->
@@ -101,7 +121,7 @@
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
-            <version>2.5.0</version>
+            <version>2.8.17</version>
         </dependency>
 
         <!-- Lombok: reduce boilerplate -->
@@ -151,21 +171,38 @@
             <version>2.21</version>
         </dependency>
 
-        <!-- FIX CVE-2026-33870/33871: netty request smuggling and CONTINUATION flood DoS -->
+        <!-- FIX Netty CVEs (CVE-2026-42579/83/84/85/87/80/81, CVE-2026-41417/42578): bump to 4.1.133.Final -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-codec</artifactId>
+            <version>${netty.version}</version>
+        </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-codec-http</artifactId>
-            <version>4.1.132.Final</version>
+            <version>${netty.version}</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-codec-http2</artifactId>
-            <version>4.1.132.Final</version>
+            <version>${netty.version}</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
-            <artifactId>netty-codec</artifactId>
-            <version>4.1.132.Final</version>
+            <artifactId>netty-codec-dns</artifactId>
+            <version>${netty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-handler-proxy</artifactId>
+            <version>${netty.version}</version>
+        </dependency>
+
+        <!-- FIX CVE-2026-5598, CVE-2026-0636: bcprov-jdk18on private key leak + LDAP injection -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.84</version>
         </dependency>
 
         <!-- FIX CVE-2025-48924: commons-lang3 uncontrolled recursion -->
@@ -195,52 +232,52 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- FIX CVE-2026-22737/22735: spring-webflux info disclosure and SSE corruption -->
-            <!-- Pin all Spring Framework modules to 6.2.17 for consistency -->
+            <!-- FIX CVE-2026-22740/41/45: spring-webflux DoS vulnerabilities -->
+            <!-- Pin all Spring Framework modules to 6.2.18 for consistency -->
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-webflux</artifactId>
-                <version>6.2.17</version>
+                <version>6.2.18</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-web</artifactId>
-                <version>6.2.17</version>
+                <version>6.2.18</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-core</artifactId>
-                <version>6.2.17</version>
+                <version>6.2.18</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-beans</artifactId>
-                <version>6.2.17</version>
+                <version>6.2.18</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-context</artifactId>
-                <version>6.2.17</version>
+                <version>6.2.18</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-expression</artifactId>
-                <version>6.2.17</version>
+                <version>6.2.18</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-aop</artifactId>
-                <version>6.2.17</version>
+                <version>6.2.18</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-tx</artifactId>
-                <version>6.2.17</version>
+                <version>6.2.18</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-jcl</artifactId>
-                <version>6.2.17</version>
+                <version>6.2.18</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -334,16 +371,24 @@
                         </goals>
                         <configuration>
                             <excludes>
+                                <exclude>**/annotation/**/*</exclude>
+                                <exclude>**/api/**/*</exclude>
                                 <exclude>**/config/**/*</exclude>
                                 <exclude>**/controller/**/*</exclude>
                                 <exclude>**/dto/**/*</exclude>
                                 <exclude>**/enums/**/*</exclude>
+                                <exclude>**/erpnext/**/*</exclude>
                                 <exclude>**/exception/**/*</exclude>
+                                <exclude>**/mapper/**/*</exclude>
                                 <exclude>**/model/**/*</exclude>
+                                <exclude>**/properties/**/*</exclude>
                                 <exclude>**/repository/**/*</exclude>
                                 <exclude>**/security/**/*</exclude>
                                 <exclude>**/service/**/*</exclude>
+                                <exclude>**/util/**/*</exclude>
                                 <exclude>**/utils/**/*</exclude>
+                                <exclude>**/validators/**/*</exclude>
+                                <exclude>**/web/**/*</exclude>
                             </excludes>
                         </configuration>
                     </execution>

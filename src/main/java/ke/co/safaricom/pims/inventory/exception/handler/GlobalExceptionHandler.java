@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.support.WebExchangeBindException;
 
-import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestControllerAdvice
@@ -22,50 +24,60 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(WebExchangeBindException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(WebExchangeBindException ex) {
-        String message = ex.getBindingResult().getFieldErrors().stream()
-                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
-                .findFirst()
-                .orElse("Validation failed");
-        return error(HttpStatus.BAD_REQUEST, "Validation Error", message);
+        List<Map<String, String>> errors = new ArrayList<>();
+        ex.getBindingResult().getFieldErrors().forEach(fe -> errors.add(
+                Map.of("field", fe.getField(), "message", fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "")));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "VALIDATION_ERROR");
+        body.put(
+                "message",
+                errors.isEmpty() ? "Validation failed" : errors.get(0).get("message"));
+        body.put("errors", errors);
+        body.put("details", Map.of());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
-        return error(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
+        return specError(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), null);
     }
 
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<Map<String, Object>> handleConflict(ConflictException ex) {
-        return error(HttpStatus.CONFLICT, "Conflict", ex.getMessage());
+        return specError(HttpStatus.CONFLICT, "CONFLICT", ex.getMessage(), null);
     }
 
     @ExceptionHandler(ServiceValidationException.class)
     public ResponseEntity<Map<String, Object>> handleServiceValidation(ServiceValidationException ex) {
-        return error(HttpStatus.UNPROCESSABLE_ENTITY, "Validation Error", ex.getMessage());
+        return specError(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), null);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
-        return error(HttpStatus.FORBIDDEN, "Access Denied", "You do not have permission to access this resource.");
+        return specError(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have permission.", null);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
-        return error(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage());
+        return specError(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), null);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
         logger.error("Unhandled exception", ex);
-        return error(HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", "An unexpected error occurred.");
+        return specError(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "An unexpected error occurred.",
+                Map.of());
     }
 
-    private ResponseEntity<Map<String, Object>> error(HttpStatus status, String error, String message) {
-        return ResponseEntity.status(status).body(Map.of(
-                "timestamp", Instant.now().toString(),
-                "status", status.value(),
-                "error", error,
-                "message", message
-        ));
+    private static ResponseEntity<Map<String, Object>> specError(
+            HttpStatus status, String code, String message, Map<String, Object> details) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", code);
+        body.put("message", message);
+        body.put("details", details);
+        return ResponseEntity.status(status).body(body);
     }
 }
