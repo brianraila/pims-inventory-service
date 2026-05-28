@@ -36,6 +36,9 @@ public class SecurityConfig {
                         .pathMatchers(
                                 "/v3/api-docs",
                                 "/v3/api-docs/**",
+                                "/api/v1/inventory/v3/api-docs",
+                                "/api/v1/inventory/v3/api-docs/**",
+                                "/api/v1/inventory/swagger-ui/**"
                                 "/swagger-ui.html",
                                 "/swagger-ui/**").permitAll()
                         .pathMatchers(Constants.API_PREFIX + "/**").authenticated()
