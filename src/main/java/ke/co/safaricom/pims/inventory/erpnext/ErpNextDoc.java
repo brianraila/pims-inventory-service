@@ -54,6 +54,7 @@ public record ErpNextDoc(
         @JsonProperty("reserved_qty") Double reservedQty,
 
         // --- Batch ---
+        @JsonProperty("item") String item,
         @JsonProperty("batch_id") String batchId,
         @JsonProperty("expiry_date") String expiryDate,
         @JsonProperty("manufacturing_date") String manufacturingDate,

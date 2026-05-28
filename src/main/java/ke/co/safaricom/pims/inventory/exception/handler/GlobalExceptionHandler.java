@@ -11,6 +11,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.support.WebExchangeBindException;
+import org.springframework.web.server.ServerWebInputException;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -55,6 +56,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
         return specError(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have permission.", null);
+    }
+
+    @ExceptionHandler(ServerWebInputException.class)
+    public ResponseEntity<Map<String, Object>> handleBadInput(ServerWebInputException ex) {
+        String msg = "Invalid request body or parameter.";
+        if (ex.getCause() instanceof com.fasterxml.jackson.databind.exc.InvalidFormatException ife
+                && !ife.getPath().isEmpty()) {
+            String field = ife.getPath().get(ife.getPath().size() - 1).getFieldName();
+            msg = "Invalid value '" + ife.getValue() + "' for field '" + field + "'.";
+        }
+        return specError(HttpStatus.BAD_REQUEST, "BAD_REQUEST", msg, null);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

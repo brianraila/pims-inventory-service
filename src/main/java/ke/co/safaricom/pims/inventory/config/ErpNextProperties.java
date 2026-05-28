@@ -22,11 +22,13 @@ public record ErpNextProperties(
         String apiSecret,
         String scheme,
         Integer port,
+        String defaultWarehouse,
         Map<String, TenantCredentials> tenants,
         WrapperConfig wrapper
 ) {
     public ErpNextProperties {
         if (scheme == null || scheme.isBlank()) scheme = "https";
+        if (defaultWarehouse == null || defaultWarehouse.isBlank()) defaultWarehouse = "Stores - S";
         if (tenants == null) tenants = Map.of();
     }
 
