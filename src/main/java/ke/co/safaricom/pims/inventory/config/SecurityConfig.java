@@ -23,9 +23,6 @@ public class SecurityConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
 
-    private static final String DEFAULT_LOCAL_JWK_URI =
-            "http://localhost:8080/realms/pims/protocol/openid-connect/certs";
-
     @Bean
     SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http) {
         return http
@@ -49,8 +46,8 @@ public class SecurityConfig {
 
     @Bean
     ReactiveJwtDecoder jwtDecoder(
-            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}") String jwkSetUri,
-            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") String issuerUri) {
+            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
+            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuerUri) {
         String resolvedUri = resolveJwkSetUri(jwkSetUri, issuerUri);
         logger.info("Using JWK set URI: {}", resolvedUri);
         return NimbusReactiveJwtDecoder.withJwkSetUri(resolvedUri).build();
@@ -64,7 +61,8 @@ public class SecurityConfig {
             String normalized = issuerUri.endsWith("/") ? issuerUri : issuerUri + "/";
             return normalized + "protocol/openid-connect/certs";
         }
-        logger.warn("No JWT issuer-uri or jwk-set-uri configured; falling back to local default URI");
-        return DEFAULT_LOCAL_JWK_URI;
+        logger.warn("No JWT jwk-set-uri or issuer-uri configured; JWT validation will not work correctly");
+        throw new IllegalStateException("Either spring.security.oauth2.resourceserver.jwt.jwk-set-uri " +
+                "or spring.security.oauth2.resourceserver.jwt.issuer-uri must be configured");
     }
 }
