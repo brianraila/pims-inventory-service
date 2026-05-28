@@ -19,6 +19,7 @@ import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -89,6 +90,7 @@ class ProductInventoryServiceTest {
                 null, null, null, null, null, null, null, null,
                 name,
                 null, null, null,
+                null,              // item (Batch parent link)
                 null, null, null, null,
                 null, null, null, null, null, null, null,
                 null, null, null, null, null);
@@ -594,7 +596,8 @@ class ProductInventoryServiceTest {
         InventoryItemResponse itemResp = item(ITEM_CODE);
         StockAdjustmentResponse adj = adjustment("adj-1", "addition", 10.0, ITEM_CODE);
         when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
-        when(inventoryService.listAdjustments(TENANT)).thenReturn(Mono.just(List.of(adj)));
+        when(inventoryService.listAdjustments(ArgumentMatchers.eq(TENANT), ArgumentMatchers.anyString()))
+                .thenReturn(Mono.just(List.of(adj)));
 
         UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
 
@@ -609,9 +612,10 @@ class ProductInventoryServiceTest {
     @Test
     void listAdjustments_filters_to_matching_product_only() {
         InventoryItemResponse itemResp = item(ITEM_CODE);
-        StockAdjustmentResponse adj = adjustment("adj-2", "addition", 10.0, "OTHER-ITEM");
         when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
-        when(inventoryService.listAdjustments(TENANT)).thenReturn(Mono.just(List.of(adj)));
+        // server-side filter (linked child) returns empty when no entries match this item
+        when(inventoryService.listAdjustments(ArgumentMatchers.eq(TENANT), ArgumentMatchers.anyString()))
+                .thenReturn(Mono.just(List.of()));
 
         UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
 

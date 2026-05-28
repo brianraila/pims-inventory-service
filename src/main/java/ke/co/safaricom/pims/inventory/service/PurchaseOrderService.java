@@ -7,6 +7,7 @@ import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.mapper.PurchaseOrderMapper;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -37,7 +38,7 @@ public class PurchaseOrderService {
         params.put(PARAM_FIELDS, PO_FIELDS);
         params.put("order_by", "transaction_date desc");
 
-        return router.getList(tenantId, DOCTYPE_PURCHASE_ORDER, params, listResponseClass())
+        return router.getList(tenantId, DOCTYPE_PURCHASE_ORDER, params, LIST_TYPE)
                 .map(response -> response.data().stream()
                         .map(mapper::toResponse)
                         .toList());
@@ -53,7 +54,7 @@ public class PurchaseOrderService {
         if (request.notes() != null) body.put("remarks", request.notes());
         body.put("items", request.items().stream().map(this::toErpLineItem).toList());
 
-        return router.create(tenantId, DOCTYPE_PURCHASE_ORDER, body, singleResponseClass())
+        return router.create(tenantId, DOCTYPE_PURCHASE_ORDER, body, SINGLE_TYPE)
                 .map(response -> mapper.toResponse(response.data()));
     }
 
@@ -65,13 +66,9 @@ public class PurchaseOrderService {
         return item;
     }
 
-    @SuppressWarnings("unchecked")
-    private static Class<ErpNextListResponse<ErpNextDoc>> listResponseClass() {
-        return (Class<ErpNextListResponse<ErpNextDoc>>) (Class<?>) ErpNextListResponse.class;
-    }
+    private static final ParameterizedTypeReference<ErpNextListResponse<ErpNextDoc>> LIST_TYPE =
+            new ParameterizedTypeReference<>() {};
 
-    @SuppressWarnings("unchecked")
-    private static Class<ErpNextSingleResponse<ErpNextDoc>> singleResponseClass() {
-        return (Class<ErpNextSingleResponse<ErpNextDoc>>) (Class<?>) ErpNextSingleResponse.class;
-    }
+    private static final ParameterizedTypeReference<ErpNextSingleResponse<ErpNextDoc>> SINGLE_TYPE =
+            new ParameterizedTypeReference<>() {};
 }

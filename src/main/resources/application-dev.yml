@@ -1,4 +1,9 @@
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.reactive.ReactiveSecurityAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.reactive.ReactiveUserDetailsServiceAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.security.reactive.ReactiveManagementWebSecurityAutoConfiguration
   cloud:
     consul:
       enabled: false
@@ -13,7 +18,7 @@ server:
 
 erpnext:
   wrapper:
-    url: http://localhost:8083
+    url: http://185.218.124.26:8082
     tenant-id: erp1
 
 # Canonical REST contract: classpath static/openapi/inventory-api-v1.yaml (also linked in Swagger UI).
