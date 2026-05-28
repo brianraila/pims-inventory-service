@@ -33,7 +33,11 @@ public class SecurityConfig {
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                         .pathMatchers("/openapi/**").permitAll()
-                        .pathMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .pathMatchers(
+                                "/api/v1/inventory/v3/api-docs",
+                                "/api/v1/inventory/v3/api-docs/**",
+                                "/api/v1/inventory/swagger-ui.html",
+                                "/api/v1/inventory/swagger-ui/**").permitAll()
                         .pathMatchers(Constants.API_PREFIX + "/**").authenticated()
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}))
