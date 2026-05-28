@@ -34,10 +34,10 @@ public class SecurityConfig {
                         .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                         .pathMatchers("/openapi/**").permitAll()
                         .pathMatchers(
-                                "/api/v1/inventory/v3/api-docs",
-                                "/api/v1/inventory/v3/api-docs/**",
-                                "/api/v1/inventory/swagger-ui.html",
-                                "/api/v1/inventory/swagger-ui/**").permitAll()
+                                "/v3/api-docs",
+                                "/v3/api-docs/**",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**").permitAll()
                         .pathMatchers(Constants.API_PREFIX + "/**").authenticated()
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}))
