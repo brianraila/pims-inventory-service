@@ -1,0 +1,522 @@
+{
+  "info": {
+    "name": "PIMS — Inventory Service",
+    "description": "Postman collection for the PIMS Inventory Service API. Run **Auth / Get Token** first to populate `access_token`, then all other requests will authenticate automatically via the collection-level Bearer token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "base_url",      "value": "https://dh-api.sha.go.ke/pims/api/v1", "type": "string" },
+    { "key": "iam_url",       "value": "https://iam-dhealth.sha.go.ke",          "type": "string" },
+    { "key": "client_id",     "value": "pims-web-app",                           "type": "string" },
+    { "key": "client_secret", "value": "dEuU0OJAvnIB1S11S659LdDSfITrOUto",      "type": "string" },
+    { "key": "username",      "value": "admin@pims.local",                       "type": "string" },
+    { "key": "password",      "value": "Admin1234!",                             "type": "string" },
+    { "key": "access_token",  "value": "",                                       "type": "string" },
+    { "key": "product_id",    "value": "",                                       "type": "string" },
+    { "key": "batch_id",      "value": "",                                       "type": "string" },
+    { "key": "draft_id",      "value": "",                                       "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Keycloak OIDC token endpoint. Run this first — the test script auto-saves the access_token.",
+      "item": [
+        {
+          "name": "Get Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "    pm.collectionVariables.set('access_token', json.access_token);",
+                  "    pm.test('Token received', () => pm.expect(json.access_token).to.be.a('string'));",
+                  "} else {",
+                  "    pm.test('Token received', () => { throw new Error('No access_token in response'); });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" },
+              { "key": "Cookie",       "value": "KC_ROUTE=m1" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type",    "value": "password",                      "type": "text" },
+                { "key": "client_id",     "value": "{{client_id}}",                 "type": "text" },
+                { "key": "client_secret", "value": "{{client_secret}}",             "type": "text" },
+                { "key": "username",      "value": "{{username}}",                  "type": "text" },
+                { "key": "password",      "value": "{{password}}",                  "type": "text" },
+                { "key": "scope",         "value": "openid profile email pims.admin","type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{iam_url}}/realms/pims/protocol/openid-connect/token",
+              "host": ["{{iam_url}}"],
+              "path": ["realms", "pims", "protocol", "openid-connect", "token"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "description": "Product catalogue CRUD. Create Product auto-saves `product_id`; Save Draft auto-saves `draft_id`.",
+      "item": [
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/products?page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products"],
+              "query": [
+                { "key": "page",  "value": "1"  },
+                { "key": "limit", "value": "10" }
+              ]
+            },
+            "description": "Returns a paginated list of all products for the tenant."
+          }
+        },
+        {
+          "name": "List Products (filtered)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/products?page=1&limit=10&search=amoxicillin&category=Antibiotics&status=available",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products"],
+              "query": [
+                { "key": "page",     "value": "1"            },
+                { "key": "limit",    "value": "10"           },
+                { "key": "search",   "value": "amoxicillin"  },
+                { "key": "category", "value": "Antibiotics"  },
+                { "key": "status",   "value": "available"    }
+              ]
+            },
+            "description": "Filter products by search term, category, and/or status."
+          }
+        },
+        {
+          "name": "Create Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.id) {",
+                  "    pm.collectionVariables.set('product_id', json.id);",
+                  "    pm.test('Product created, ID saved', () => pm.expect(json.id).to.be.a('string'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_name\": \"Amoxicillin 500mg Capsules\",\n  \"generic_name\": \"Amoxicillin\",\n  \"manufacturer_id\": null,\n  \"category\": \"Antibiotics\",\n  \"ppb_code\": \"PPB-12345\",\n  \"ndc_code\": \"0069-0691-74\",\n  \"regulatory_status\": \"approved\",\n  \"strength\": \"500mg\",\n  \"dosage_form\": \"Capsule\",\n  \"unit_of_measure\": \"capsules\",\n  \"reorder_level\": 100,\n  \"maximum_stock\": 5000,\n  \"additional_notes\": \"Store below 25°C\",\n  \"terminology_source\": \"rxnorm\",\n  \"terminology_id\": \"723\",\n  \"special_requirements\": {\n    \"controlled_substance\": false,\n    \"cold_chain_required\": false,\n    \"photosensitive\": false\n  },\n  \"initial_batches\": []\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/products",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products"]
+            },
+            "description": "Create a new product. On 201 the test script captures `product_id` for use in subsequent requests."
+          }
+        },
+        {
+          "name": "Save Product Draft",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.id) {",
+                  "    pm.collectionVariables.set('draft_id', json.id);",
+                  "    pm.test('Draft saved, ID saved', () => pm.expect(json.id).to.be.a('string'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wizard_step\": 1,\n  \"data\": {\n    \"product_name\": \"Metformin 850mg\",\n    \"generic_name\": \"Metformin Hydrochloride\",\n    \"category\": \"Diabetes\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/products/drafts",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "drafts"]
+            },
+            "description": "Save a wizard step draft. wizard_step can be 1–4. On 201 the test script captures `draft_id`."
+          }
+        },
+        {
+          "name": "Get Product Draft",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/products/drafts/{{draft_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "drafts", "{{draft_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Product Draft",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wizard_step\": 2,\n  \"data\": {\n    \"product_name\": \"Metformin 850mg\",\n    \"generic_name\": \"Metformin Hydrochloride\",\n    \"category\": \"Diabetes\",\n    \"ppb_code\": \"PPB-67890\",\n    \"regulatory_status\": \"approved\",\n    \"strength\": \"850mg\",\n    \"dosage_form\": \"Tablet\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/products/drafts/{{draft_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "drafts", "{{draft_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reorder_level\": 150,\n  \"maximum_stock\": 6000,\n  \"additional_notes\": \"Updated: store below 25°C in a dry place\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}"]
+            },
+            "description": "Partial update — only include fields to change."
+          }
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}"]
+            },
+            "description": "Archives/soft-deletes the product. Returns 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Batches",
+      "description": "Stock batch management per product. Add Batch (JSON) auto-saves `batch_id`.",
+      "item": [
+        {
+          "name": "List Batches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}/batches?page=1&limit=10&sort=fefo",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}", "batches"],
+              "query": [
+                { "key": "page",  "value": "1"    },
+                { "key": "limit", "value": "10"   },
+                { "key": "sort",  "value": "fefo" }
+              ]
+            },
+            "description": "sort options: fefo (First Expiry First Out), lifo, created_at"
+          }
+        },
+        {
+          "name": "Add Batch (JSON)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.id) {",
+                  "    pm.collectionVariables.set('batch_id', json.id);",
+                  "    pm.test('Batch created, ID saved', () => pm.expect(json.id).to.be.a('string'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batch_number\": \"BATCH-2025-001\",\n  \"expiry_date\": \"2027-06-30\",\n  \"supplier\": \"Pfizer Kenya Ltd\",\n  \"quantity\": 1000,\n  \"trade_cost\": 25000.00,\n  \"unit_cost\": 25.00,\n  \"storage_location\": \"Shelf A-3\",\n  \"branch\": \"Main Pharmacy\",\n  \"grn_number\": \"GRN-2025-0042\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}/batches",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}", "batches"]
+            },
+            "description": "Add a single batch via JSON. On 201 the test script captures `batch_id`."
+          }
+        },
+        {
+          "name": "Bulk Upload Batches (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "CSV file with columns: batch_number, expiry_date, supplier, quantity, trade_cost, unit_cost, storage_location, branch, grn_number"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}/batches",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}", "batches"]
+            },
+            "description": "Upload multiple batches via CSV (multipart/form-data). Response is BatchBulkUploadResult with per-row success/error details.\n\nCSV column headers: batch_number, expiry_date (YYYY-MM-DD), supplier, quantity, trade_cost, unit_cost, storage_location, branch, grn_number"
+          }
+        },
+        {
+          "name": "Get Batch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}/batches/{{batch_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}", "batches", "{{batch_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Remove Batch",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}/batches/{{batch_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}", "batches", "{{batch_id}}"]
+            },
+            "description": "Returns 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stock Adjustments",
+      "description": "Record stock increases or decreases against a specific batch.",
+      "item": [
+        {
+          "name": "List Adjustments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}/adjustments?page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}", "adjustments"],
+              "query": [
+                { "key": "page",  "value": "1"  },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Stock Adjustment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batch_id\": \"{{batch_id}}\",\n  \"adjustment_type\": \"decrease\",\n  \"quantity\": 50,\n  \"reason\": \"damaged\",\n  \"notes\": \"Water damage during storage — 50 capsules written off\",\n  \"reference_number\": \"ADJ-2025-001\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/products/{{product_id}}/adjustments",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "products", "{{product_id}}", "adjustments"]
+            },
+            "description": "adjustment_type: increase | decrease\nreason: damaged | expired | theft | correction | return_to_supplier | internal_transfer | write_off | other"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Terminology Service",
+      "description": "Drug terminology lookup against RxNorm and Kenya PPB NDC sources.",
+      "item": [
+        {
+          "name": "Search Terminology",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/terminology/search?q=amoxicillin&source=all&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["terminology", "search"],
+              "query": [
+                { "key": "q",      "value": "amoxicillin" },
+                { "key": "source", "value": "all"         },
+                { "key": "limit",  "value": "10"          }
+              ]
+            },
+            "description": "q must be at least 2 characters.\nsource options: rxnorm | ppb_ndc | all"
+          }
+        },
+        {
+          "name": "Get Terminology Product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/terminology/products/:terminology_id",
+              "host": ["{{base_url}}"],
+              "path": ["terminology", "products", ":terminology_id"],
+              "variable": [
+                { "key": "terminology_id", "value": "723", "description": "RxNorm CUI or PPB NDC code" }
+              ]
+            },
+            "description": "Fetch full drug details by terminology ID (RxNorm CUI or PPB NDC code)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Manufacturers",
+      "description": "Manufacturer catalogue lookup.",
+      "item": [
+        {
+          "name": "List Manufacturers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manufacturers?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["manufacturers"],
+              "query": [
+                { "key": "limit",  "value": "50" },
+                { "key": "search", "value": "",   "disabled": true }
+              ]
+            },
+            "description": "Returns the manufacturer catalogue. Enable the `search` param to filter by name."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Purchase Orders",
+      "description": "ERPNext purchase order management. Note: request/response bodies use camelCase (not snake_case).",
+      "item": [
+        {
+          "name": "List Purchase Orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/purchase-orders",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "purchase-orders"]
+            },
+            "description": "Returns all purchase orders for the tenant. If JWT lacks tenant context, add X-Tenant-Id header."
+          }
+        },
+        {
+          "name": "Create Purchase Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier\": \"Pfizer Kenya Ltd\",\n  \"transactionDate\": \"2026-05-28\",\n  \"scheduleDate\": \"2026-06-10\",\n  \"notes\": \"Urgent restock for Amoxicillin\",\n  \"items\": [\n    {\n      \"itemCode\": \"AMOX-500-CAP\",\n      \"qty\": 500,\n      \"rate\": 25.00\n    },\n    {\n      \"itemCode\": \"MET-850-TAB\",\n      \"qty\": 200,\n      \"rate\": 18.50\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/purchase-orders",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "purchase-orders"]
+            },
+            "description": "Creates a purchase order in ERPNext. All fields are camelCase. `itemCode` must match an ERPNext Item document name. `supplier` must match an ERPNext Supplier document name."
+          }
+        }
+      ]
+    }
+  ]
+}

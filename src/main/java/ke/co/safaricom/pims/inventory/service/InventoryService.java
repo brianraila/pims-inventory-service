@@ -8,8 +8,11 @@ import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
+import ke.co.safaricom.pims.inventory.config.ErpNextProperties;
 import ke.co.safaricom.pims.inventory.mapper.InventoryMapper;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
@@ -32,10 +35,12 @@ public class InventoryService {
 
     private final ErpNextTenantRouter router;
     private final InventoryMapper mapper;
+    private final ErpNextProperties properties;
 
-    public InventoryService(ErpNextTenantRouter router, InventoryMapper mapper) {
+    public InventoryService(ErpNextTenantRouter router, InventoryMapper mapper, ErpNextProperties properties) {
         this.router = router;
         this.mapper = mapper;
+        this.properties = properties;
     }
 
     // ---- Items --------------------------------------------------------------
@@ -45,14 +50,14 @@ public class InventoryService {
         params.put(PARAM_FIELDS, ITEM_FIELDS);
         params.put(PARAM_FILTERS, "[[\"disabled\",\"=\",0]]");
 
-        return router.getList(tenantId, "Item", params, listResponseClass())
+        return router.getList(tenantId, "Item", params, LIST_TYPE)
                 .map(response -> response.data().stream()
                         .map(mapper::toItemResponse)
                         .toList());
     }
 
     public Mono<InventoryItemResponse> getItem(String tenantId, String itemId) {
-        return router.getOne(tenantId, "Item", itemId, singleResponseClass())
+        return router.getOne(tenantId, "Item", itemId, SINGLE_TYPE)
                 .map(response -> mapper.toItemResponse(response.data()));
     }
 
@@ -63,7 +68,7 @@ public class InventoryService {
         params.put(PARAM_FIELDS, BATCH_FIELDS);
         params.put(PARAM_FILTERS, "[[\"disabled\",\"=\",0]]");
 
-        return router.getList(tenantId, "Batch", params, listResponseClass())
+        return router.getList(tenantId, "Batch", params, LIST_TYPE)
                 .map(response -> response.data().stream()
                         .map(mapper::toBatchResponse)
                         .toList());
@@ -71,14 +76,17 @@ public class InventoryService {
 
     // ---- Stock Adjustments --------------------------------------------------
 
-    public Mono<List<StockAdjustmentResponse>> listAdjustments(String tenantId) {
+    public Mono<List<StockAdjustmentResponse>> listAdjustments(String tenantId, String itemCode) {
         Map<String, String> params = new HashMap<>();
         params.put(PARAM_FIELDS, STOCK_ENTRY_FIELDS);
-        params.put(PARAM_FILTERS, "[[\"purpose\",\"in\",\"Material Receipt,Material Issue\"]]");
+        String filters = itemCode != null && !itemCode.isBlank()
+                ? "[[\"Stock Entry Detail\",\"item_code\",\"=\",\"" + itemCode + "\"],[\"purpose\",\"in\",\"Material Receipt,Material Issue\"]]"
+                : "[[\"purpose\",\"in\",\"Material Receipt,Material Issue\"]]";
+        params.put(PARAM_FILTERS, filters);
 
-        return router.getList(tenantId, DOCTYPE_STOCK_ENTRY, params, listResponseClass())
+        return router.getList(tenantId, DOCTYPE_STOCK_ENTRY, params, LIST_TYPE)
                 .map(response -> response.data().stream()
-                        .map(mapper::toAdjustmentResponse)
+                        .map(doc -> mapper.toAdjustmentResponse(doc, itemCode))
                         .toList());
     }
 
@@ -91,7 +99,7 @@ public class InventoryService {
         body.put("remarks", request.reason());
         body.put("items", List.of(buildStockEntryItem(request)));
 
-        return router.create(tenantId, DOCTYPE_STOCK_ENTRY, body, singleResponseClass())
+        return router.create(tenantId, DOCTYPE_STOCK_ENTRY, body, SINGLE_TYPE)
                 .map(response -> mapper.toAdjustmentResponse(response.data()));
     }
 
@@ -101,20 +109,15 @@ public class InventoryService {
         Map<String, Object> item = new HashMap<>();
         item.put("item_code", req.itemCode());
         item.put("qty", req.quantity());
-        item.put("t_warehouse", req.warehouse());
+        String warehouse = StringUtils.hasText(req.warehouse()) ? req.warehouse() : properties.defaultWarehouse();
+        item.put("t_warehouse", warehouse);
         if (req.batchNo() != null) item.put("batch_no", req.batchNo());
         return item;
     }
 
-    // ---- raw-type cast helpers (Jackson can't infer generic records at runtime) ---
+    private static final ParameterizedTypeReference<ErpNextListResponse<ErpNextDoc>> LIST_TYPE =
+            new ParameterizedTypeReference<>() {};
 
-    @SuppressWarnings("unchecked")
-    private static Class<ErpNextListResponse<ErpNextDoc>> listResponseClass() {
-        return (Class<ErpNextListResponse<ErpNextDoc>>) (Class<?>) ErpNextListResponse.class;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Class<ErpNextSingleResponse<ErpNextDoc>> singleResponseClass() {
-        return (Class<ErpNextSingleResponse<ErpNextDoc>>) (Class<?>) ErpNextSingleResponse.class;
-    }
+    private static final ParameterizedTypeReference<ErpNextSingleResponse<ErpNextDoc>> SINGLE_TYPE =
+            new ParameterizedTypeReference<>() {};
 }

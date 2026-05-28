@@ -61,7 +61,7 @@ public class InventoryMapper {
         return new BatchResponse(
                 doc.name(),
                 doc.batchId() != null ? doc.batchId() : doc.name(),
-                safeStr(doc.itemCode()),
+                safeStr(doc.item()),
                 doc.actualQty() != null ? doc.actualQty() : 0,
                 status,
                 safeStr(doc.expiryDate()),
@@ -76,9 +76,14 @@ public class InventoryMapper {
     }
 
     public StockAdjustmentResponse toAdjustmentResponse(ErpNextDoc doc) {
+        return toAdjustmentResponse(doc, null);
+    }
+
+    public StockAdjustmentResponse toAdjustmentResponse(ErpNextDoc doc, String itemCodeFallback) {
         String type = "Material Receipt".equals(doc.purpose()) ? "addition" : "reduction";
         double qty = firstItemQty(doc);
         String itemCode = firstItemCode(doc);
+        if (itemCode == null || itemCode.isBlank()) itemCode = itemCodeFallback;
         return new StockAdjustmentResponse(
                 doc.name(),
                 doc.name(),

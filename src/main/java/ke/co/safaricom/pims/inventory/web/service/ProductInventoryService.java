@@ -7,6 +7,7 @@ import ke.co.safaricom.pims.inventory.api.dto.StockAdjustmentResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
+import org.springframework.core.ParameterizedTypeReference;
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
 import ke.co.safaricom.pims.inventory.mapper.InventoryMapper;
@@ -47,10 +48,8 @@ public class ProductInventoryService {
         this.drafts = drafts;
     }
 
-    @SuppressWarnings("unchecked")
-    private static Class<ErpNextSingleResponse<ErpNextDoc>> singleClass() {
-        return (Class<ErpNextSingleResponse<ErpNextDoc>>) (Class<?>) ErpNextSingleResponse.class;
-    }
+    private static final ParameterizedTypeReference<ErpNextSingleResponse<ErpNextDoc>> SINGLE_TYPE =
+            new ParameterizedTypeReference<>() {};
 
     public Mono<InventoryApiSchemas.ProductListResponse> listProducts(
             String tenantId,
@@ -296,11 +295,12 @@ public class ProductInventoryService {
             body.put("item_group", req.category() != null ? req.category().name() : "Products");
             body.put("stock_uom", req.unitOfMeasure() != null ? mapUom(req.unitOfMeasure()) : "Nos");
             body.put("is_stock_item", 1);
+            body.put("has_batch_no", 1);
             body.put("description", ItemExtrasCodec.embed("", req));
             applyCreateCustomFields(body, req);
 
             return router
-                    .create(tenantId, "Item", body, singleClass())
+                    .create(tenantId, "Item", body, SINGLE_TYPE)
                     .flatMap(created -> chainInitialBatches(tenantId, itemCode, req))
                     .then(getProduct(tenantId, StableEntityIds.itemId(tenantId, itemCode)));
         });
@@ -309,7 +309,7 @@ public class ProductInventoryService {
     public Mono<InventoryApiSchemas.ProductDetail> updateProduct(String tenantId, UUID productId, InventoryApiSchemas.UpdateProductRequest u) {
         return resolveItemName(tenantId, productId)
                 .flatMap(itemName -> router
-                        .getOne(tenantId, "Item", itemName, singleClass())
+                        .getOne(tenantId, "Item", itemName, SINGLE_TYPE)
                         .flatMap(one -> {
                             ErpNextDoc doc = one.data();
                             Map<String, Object> body = new HashMap<>();
@@ -324,14 +324,23 @@ public class ProductInventoryService {
                             String desc = ItemExtrasCodec.mergeUpdate(
                                     Optional.ofNullable(doc.description()).orElse(""), u);
                             body.put("description", desc);
-                            return router.replace(tenantId, "Item", doc.name(), body, singleClass());
+                            return router.replace(tenantId, "Item", doc.name(), body, SINGLE_TYPE);
                         })
                         .then(getProduct(tenantId, productId)));
     }
 
     public Mono<Void> deleteProduct(String tenantId, UUID productId) {
         return resolveItemName(tenantId, productId).flatMap(itemName ->
-                router.delete(tenantId, "Item", itemName));
+                router.getOne(tenantId, "Item", itemName, SINGLE_TYPE).flatMap(one -> {
+                    ErpNextDoc doc = one.data();
+                    Map<String, Object> body = new HashMap<>();
+                    body.put("item_code", doc.name());
+                    body.put("item_name", doc.itemName());
+                    body.put("item_group", doc.itemGroup());
+                    body.put("stock_uom", doc.stockUom());
+                    body.put("disabled", 1);
+                    return router.replace(tenantId, "Item", itemName, body, SINGLE_TYPE).then();
+                }));
     }
 
     public Mono<InventoryApiSchemas.BatchListResponse> listBatches(
@@ -440,10 +449,8 @@ public class ProductInventoryService {
     public Mono<InventoryApiSchemas.AdjustmentListResponse> listAdjustments(String tenantId, UUID productId, int page, int limit) {
         return resolveItemName(tenantId, productId)
                 .flatMap(itemCode -> inventoryService
-                        .listAdjustments(tenantId)
-                        .map(list -> list.stream()
-                                .filter(a -> itemCode.equals(a.product()))
-                                .toList())
+                        .listAdjustments(tenantId, itemCode)
+                        .map(list -> list)
                         .map(filtered -> {
                             long total = filtered.size();
                             int lim = clampLimit(limit);
@@ -527,7 +534,7 @@ public class ProductInventoryService {
         body.put("item", itemCode);
         body.put("expiry_date", b.expiryDate());
         body.put("supplier", b.supplier());
-        return router.create(tenantId, "Batch", body, singleClass()).then();
+        return router.create(tenantId, "Batch", body, SINGLE_TYPE).then();
     }
 
     private Mono<InventoryApiSchemas.Batch> lastCreatedBatchForItem(String tenantId, String itemCode, String batchNumberGuess) {

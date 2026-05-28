@@ -1,6 +1,7 @@
 package ke.co.safaricom.pims.inventory.erpnext;
 
 import ke.co.safaricom.pims.inventory.config.ErpNextProperties;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -30,17 +31,25 @@ public class ErpNextTenantRouter {
     // ---- GET list -----------------------------------------------------------
 
     public <T> Mono<T> getList(String tenantId, String doctype, Map<String, String> queryParams, Class<T> type) {
-        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-        queryParams.forEach(params::add);
-        if (!params.containsKey("limit_page_length")) {
-            params.add("limit_page_length", "500");
-        }
-        return client.get(resolveBaseUrl(tenantId), resolveHeaders(tenantId), resourcePath(doctype), params, type);
+        return client.get(resolveBaseUrl(tenantId), resolveHeaders(tenantId), resourcePath(doctype), toMultiValue(queryParams), type);
+    }
+
+    public <T> Mono<T> getList(String tenantId, String doctype, Map<String, String> queryParams, ParameterizedTypeReference<T> type) {
+        return client.get(resolveBaseUrl(tenantId), resolveHeaders(tenantId), resourcePath(doctype), toMultiValue(queryParams), type);
     }
 
     // ---- GET single ---------------------------------------------------------
 
     public <T> Mono<T> getOne(String tenantId, String doctype, String name, Class<T> type) {
+        return client.get(
+                resolveBaseUrl(tenantId),
+                resolveHeaders(tenantId),
+                resourcePath(doctype) + "/" + name,
+                new LinkedMultiValueMap<>(),
+                type);
+    }
+
+    public <T> Mono<T> getOne(String tenantId, String doctype, String name, ParameterizedTypeReference<T> type) {
         return client.get(
                 resolveBaseUrl(tenantId),
                 resolveHeaders(tenantId),
@@ -55,9 +64,18 @@ public class ErpNextTenantRouter {
         return client.post(resolveBaseUrl(tenantId), resolveHeaders(tenantId), resourcePath(doctype), body, type);
     }
 
+    public <T> Mono<T> create(String tenantId, String doctype, Object body, ParameterizedTypeReference<T> type) {
+        return client.post(resolveBaseUrl(tenantId), resolveHeaders(tenantId), resourcePath(doctype), body, type);
+    }
+
     // ---- PUT (update entire document) --------------------------------------
 
     public <T> Mono<T> replace(String tenantId, String doctype, String name, Object body, Class<T> type) {
+        String path = resourcePath(doctype) + "/" + name;
+        return client.put(resolveBaseUrl(tenantId), resolveHeaders(tenantId), path, body, type);
+    }
+
+    public <T> Mono<T> replace(String tenantId, String doctype, String name, Object body, ParameterizedTypeReference<T> type) {
         String path = resourcePath(doctype) + "/" + name;
         return client.put(resolveBaseUrl(tenantId), resolveHeaders(tenantId), path, body, type);
     }
@@ -94,5 +112,14 @@ public class ErpNextTenantRouter {
 
     private String resourcePath(String doctype) {
         return RESOURCE_API + "/" + doctype;
+    }
+
+    private MultiValueMap<String, String> toMultiValue(Map<String, String> queryParams) {
+        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        queryParams.forEach(params::add);
+        if (!params.containsKey("limit_page_length")) {
+            params.add("limit_page_length", "500");
+        }
+        return params;
     }
 }
