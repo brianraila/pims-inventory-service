@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.util.StringUtils;
+import org.springframework.web.reactive.function.client.WebClient;
 
 @Profile("!dev")
 @Configuration
@@ -46,11 +47,14 @@ public class SecurityConfig {
 
     @Bean
     ReactiveJwtDecoder jwtDecoder(
-            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
-            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuerUri) {
+            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}") String jwkSetUri,
+            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") String issuerUri,
+            WebClient webClient) {
         String resolvedUri = resolveJwkSetUri(jwkSetUri, issuerUri);
         logger.info("Using JWK set URI: {}", resolvedUri);
-        return NimbusReactiveJwtDecoder.withJwkSetUri(resolvedUri).build();
+        return NimbusReactiveJwtDecoder.withJwkSetUri(resolvedUri)
+                .webClient(webClient)
+                .build();
     }
 
     private String resolveJwkSetUri(String jwkSetUri, String issuerUri) {
