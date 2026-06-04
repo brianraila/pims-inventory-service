@@ -27,8 +27,8 @@ import static org.mockito.Mockito.when;
 @Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
 class TerminologyControllerTest {
 
-    private static final String SEARCH_BASE = "/api/v1/terminology/search";
-    private static final String PRODUCT_BASE = "/api/v1/terminology/products";
+    private static final String SEARCH_BASE = "/api/v1/inventory/terminology/search";
+    private static final String PRODUCT_BASE = "/api/v1/inventory/terminology/products";
 
     @Autowired
     private WebTestClient client;

@@ -21,7 +21,7 @@ import reactor.core.publisher.Mono;
 import java.util.UUID;
 
 @RestController
-@RequestMapping(Constants.PUBLIC_API_ROOT + "/terminology")
+@RequestMapping(Constants.API_PREFIX + "/terminology")
 @Tag(name = "Terminology Service", description = "Stubbed RxNorm/PPB search (replace with live integration)")
 public class TerminologyController {
 
