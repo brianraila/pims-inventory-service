@@ -25,7 +25,7 @@ import static org.mockito.Mockito.when;
 @Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
 class ManufacturersControllerTest {
 
-    private static final String BASE = "/api/v1/manufacturers";
+    private static final String BASE = "/api/v1/inventory/manufacturers";
 
     @Autowired
     private WebTestClient client;
