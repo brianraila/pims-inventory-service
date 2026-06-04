@@ -80,6 +80,13 @@ public class ErpNextTenantRouter {
         return client.put(resolveBaseUrl(tenantId), resolveHeaders(tenantId), path, body, type);
     }
 
+    // ---- Frappe method call -------------------------------------------------
+
+    public <T> Mono<T> callMethod(String tenantId, String method, Object body, ParameterizedTypeReference<T> type) {
+        return client.post(resolveBaseUrl(tenantId), resolveHeaders(tenantId),
+                "/api/method/" + method, body, type);
+    }
+
     // ---- DELETE -------------------------------------------------------------
 
     public Mono<Void> delete(String tenantId, String doctype, String name) {

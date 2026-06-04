@@ -77,10 +77,16 @@ public record ErpNextDoc(
         @JsonProperty("to_warehouse") String toWarehouse,
         @JsonProperty("items") java.util.List<java.util.Map<String, Object>> items,
 
-        // --- Purchase Order ---
+        // --- Purchase Order / Sales Invoice shared ---
         @JsonProperty("status") String status,
         @JsonProperty("transaction_date") String transactionDate,
         @JsonProperty("schedule_date") String scheduleDate,
         @JsonProperty("grand_total") Double grandTotal,
-        @JsonProperty("items_count") Integer itemsCount
+        @JsonProperty("items_count") Integer itemsCount,
+
+        // --- Sales Invoice ---
+        @JsonProperty("customer") String customer,
+        @JsonProperty("currency") String currency,
+        @JsonProperty("net_total") Double netTotal,
+        @JsonProperty("total_taxes_and_charges") Double totalTaxesAndCharges
 ) {}

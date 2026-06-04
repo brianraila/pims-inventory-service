@@ -96,7 +96,8 @@ class ProductInventoryServiceTest {
                 null, null, null, null,
                 null, null, null, null,  // batchQty, supplierName, warehouseName, isGroup
                 null, null, null, null, null, null, null,
-                null, null, null, null, null);
+                null, null, null, null, null,
+                null, null, null, null);  // customer, currency, netTotal, totalTaxesAndCharges
     }
 
     private void stubListItemsAndBatches(String itemCode, double qty) {
