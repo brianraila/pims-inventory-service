@@ -528,13 +528,35 @@ public class ProductInventoryService {
     }
 
     private Mono<Void> addBatchRaw(String tenantId, String itemCode, InventoryApiSchemas.CreateBatchRequest b) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("doctype", "Batch");
-        body.put("batch_id", b.batchNumber());
-        body.put("item", itemCode);
-        body.put("expiry_date", b.expiryDate());
-        body.put("supplier", b.supplier());
-        return router.create(tenantId, "Batch", body, SINGLE_TYPE).then();
+        Map<String, Object> batchBody = new HashMap<>();
+        batchBody.put("doctype", "Batch");
+        batchBody.put("batch_id", b.batchNumber());
+        batchBody.put("item", itemCode);
+        batchBody.put("expiry_date", b.expiryDate());
+        batchBody.put("supplier", b.supplier());
+        Mono<Void> createBatch = router.create(tenantId, "Batch", batchBody, SINGLE_TYPE).then();
+        if (b.quantity() == null || b.quantity() <= 0) {
+            return createBatch;
+        }
+        return createBatch.then(createInitialStockEntry(tenantId, itemCode, b));
+    }
+
+    private Mono<Void> createInitialStockEntry(String tenantId, String itemCode, InventoryApiSchemas.CreateBatchRequest b) {
+        String warehouse = StringUtils.hasText(b.storageLocation())
+                ? b.storageLocation() : inventoryService.defaultWarehouse();
+        Map<String, Object> lineItem = new HashMap<>();
+        lineItem.put("item_code", itemCode);
+        lineItem.put("qty", b.quantity());
+        lineItem.put("t_warehouse", warehouse);
+        lineItem.put("batch_no", b.batchNumber());
+        if (b.unitCost() != null) lineItem.put("basic_rate", b.unitCost());
+        Map<String, Object> entry = new HashMap<>();
+        entry.put("doctype", "Stock Entry");
+        entry.put("stock_entry_type", "Material Receipt");
+        entry.put("purpose", "Material Receipt");
+        entry.put("remarks", "Initial batch stocking");
+        entry.put("items", List.of(lineItem));
+        return router.create(tenantId, "Stock Entry", entry, SINGLE_TYPE).then();
     }
 
     private Mono<InventoryApiSchemas.Batch> lastCreatedBatchForItem(String tenantId, String itemCode, String batchNumberGuess) {
@@ -686,8 +708,12 @@ public class ProductInventoryService {
     }
 
 
+    private static boolean isUsable(BatchResponse b) {
+        return !"expired".equals(b.status()) && !"recalled".equals(b.status());
+    }
+
     private InventoryApiSchemas.ProductSummary toSummary(String tenantId, InventoryItemResponse it, List<BatchResponse> batches) {
-        double total = batches.stream().mapToDouble(BatchResponse::quantity).sum();
+        double total = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
         String genericDisplay = ItemExtrasCodec.displayGenericName(it.genericName(), ex);
         Enums.UnitOfMeasure uom = Enums.UnitOfMeasure.fromItemUom(it.unit());
@@ -709,7 +735,7 @@ public class ProductInventoryService {
 
     private InventoryApiSchemas.ProductDetail buildDetail(
             String tenantId, InventoryItemResponse it, List<BatchResponse> batches, InventoryApiSchemas.BatchListResponse batchList) {
-        double total = batches.stream().mapToDouble(BatchResponse::quantity).sum();
+        double total = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
         Enums.ProductCategory cat =
                 ex.containsKey("category")
@@ -736,7 +762,7 @@ public class ProductInventoryService {
             }
         }
         InventoryApiSchemas.Manufacturer mfr = mfrId != null ? ManufacturersCatalog.byId(mfrId) : null;
-        double maxVal = batches.stream().mapToDouble(b -> b.quantity() * b.cost()).sum();
+        double maxVal = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(b -> b.quantity() * b.cost()).sum();
         double curr = total;
         double reorderQty = Math.max(0, maxStock - curr);
         return new InventoryApiSchemas.ProductDetail(

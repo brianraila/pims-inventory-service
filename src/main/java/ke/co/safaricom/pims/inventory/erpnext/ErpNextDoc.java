@@ -59,6 +59,14 @@ public record ErpNextDoc(
         @JsonProperty("expiry_date") String expiryDate,
         @JsonProperty("manufacturing_date") String manufacturingDate,
         @JsonProperty("supplier") String supplier,
+        @JsonProperty("batch_qty") Double batchQty,
+
+        // --- Supplier ---
+        @JsonProperty("supplier_name") String supplierName,
+
+        // --- Warehouse ---
+        @JsonProperty("warehouse_name") String warehouseName,
+        @JsonProperty("is_group") Integer isGroup,
 
         // --- Stock Entry ---
         @JsonProperty("stock_entry_type") String stockEntryType,

@@ -62,7 +62,7 @@ public class InventoryMapper {
                 doc.name(),
                 doc.batchId() != null ? doc.batchId() : doc.name(),
                 safeStr(doc.item()),
-                doc.actualQty() != null ? doc.actualQty() : 0,
+                firstNonNull(doc.batchQty(), doc.actualQty()),
                 status,
                 safeStr(doc.expiryDate()),
                 null,
@@ -73,6 +73,13 @@ public class InventoryMapper {
                 safeStr(doc.supplier()),
                 null
         );
+    }
+
+    private double firstNonNull(Double... vals) {
+        for (Double v : vals) {
+            if (v != null) return v;
+        }
+        return 0;
     }
 
     public StockAdjustmentResponse toAdjustmentResponse(ErpNextDoc doc) {
