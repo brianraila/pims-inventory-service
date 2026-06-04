@@ -94,6 +94,7 @@ class ProductInventoryServiceTest {
                 null, null, null,
                 null,              // item (Batch parent link)
                 null, null, null, null,
+                null, null, null, null,  // batchQty, supplierName, warehouseName, isGroup
                 null, null, null, null, null, null, null,
                 null, null, null, null, null);
     }

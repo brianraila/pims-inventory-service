@@ -708,8 +708,12 @@ public class ProductInventoryService {
     }
 
 
+    private static boolean isUsable(BatchResponse b) {
+        return !"expired".equals(b.status()) && !"recalled".equals(b.status());
+    }
+
     private InventoryApiSchemas.ProductSummary toSummary(String tenantId, InventoryItemResponse it, List<BatchResponse> batches) {
-        double total = batches.stream().mapToDouble(BatchResponse::quantity).sum();
+        double total = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
         String genericDisplay = ItemExtrasCodec.displayGenericName(it.genericName(), ex);
         Enums.UnitOfMeasure uom = Enums.UnitOfMeasure.fromItemUom(it.unit());
@@ -731,7 +735,7 @@ public class ProductInventoryService {
 
     private InventoryApiSchemas.ProductDetail buildDetail(
             String tenantId, InventoryItemResponse it, List<BatchResponse> batches, InventoryApiSchemas.BatchListResponse batchList) {
-        double total = batches.stream().mapToDouble(BatchResponse::quantity).sum();
+        double total = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
         Enums.ProductCategory cat =
                 ex.containsKey("category")
@@ -758,7 +762,7 @@ public class ProductInventoryService {
             }
         }
         InventoryApiSchemas.Manufacturer mfr = mfrId != null ? ManufacturersCatalog.byId(mfrId) : null;
-        double maxVal = batches.stream().mapToDouble(b -> b.quantity() * b.cost()).sum();
+        double maxVal = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(b -> b.quantity() * b.cost()).sum();
         double curr = total;
         double reorderQty = Math.max(0, maxStock - curr);
         return new InventoryApiSchemas.ProductDetail(
