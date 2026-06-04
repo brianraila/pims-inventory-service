@@ -528,13 +528,35 @@ public class ProductInventoryService {
     }
 
     private Mono<Void> addBatchRaw(String tenantId, String itemCode, InventoryApiSchemas.CreateBatchRequest b) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("doctype", "Batch");
-        body.put("batch_id", b.batchNumber());
-        body.put("item", itemCode);
-        body.put("expiry_date", b.expiryDate());
-        body.put("supplier", b.supplier());
-        return router.create(tenantId, "Batch", body, SINGLE_TYPE).then();
+        Map<String, Object> batchBody = new HashMap<>();
+        batchBody.put("doctype", "Batch");
+        batchBody.put("batch_id", b.batchNumber());
+        batchBody.put("item", itemCode);
+        batchBody.put("expiry_date", b.expiryDate());
+        batchBody.put("supplier", b.supplier());
+        Mono<Void> createBatch = router.create(tenantId, "Batch", batchBody, SINGLE_TYPE).then();
+        if (b.quantity() == null || b.quantity() <= 0) {
+            return createBatch;
+        }
+        return createBatch.then(createInitialStockEntry(tenantId, itemCode, b));
+    }
+
+    private Mono<Void> createInitialStockEntry(String tenantId, String itemCode, InventoryApiSchemas.CreateBatchRequest b) {
+        String warehouse = StringUtils.hasText(b.storageLocation())
+                ? b.storageLocation() : inventoryService.defaultWarehouse();
+        Map<String, Object> lineItem = new HashMap<>();
+        lineItem.put("item_code", itemCode);
+        lineItem.put("qty", b.quantity());
+        lineItem.put("t_warehouse", warehouse);
+        lineItem.put("batch_no", b.batchNumber());
+        if (b.unitCost() != null) lineItem.put("basic_rate", b.unitCost());
+        Map<String, Object> entry = new HashMap<>();
+        entry.put("doctype", "Stock Entry");
+        entry.put("stock_entry_type", "Material Receipt");
+        entry.put("purpose", "Material Receipt");
+        entry.put("remarks", "Initial batch stocking");
+        entry.put("items", List.of(lineItem));
+        return router.create(tenantId, "Stock Entry", entry, SINGLE_TYPE).then();
     }
 
     private Mono<InventoryApiSchemas.Batch> lastCreatedBatchForItem(String tenantId, String itemCode, String batchNumberGuess) {

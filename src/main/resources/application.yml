@@ -9,6 +9,11 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
+erpnext:
+  wrapper:
+    url: ${ERPNEXT_WRAPPER_URL:}
+    tenant-id: ${ERPNEXT_WRAPPER_TENANT_ID:}
+
 # Canonical REST contract: classpath static/openapi/inventory-api-v1.yaml (also linked in Swagger UI).
 # Generated /v3/api-docs is for convenience; external publishers should prefer the versioned YAML.
 springdoc:

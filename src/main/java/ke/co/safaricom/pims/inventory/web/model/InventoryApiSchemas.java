@@ -273,4 +273,18 @@ public final class InventoryApiSchemas {
             Enums.RegulatoryStatus regulatoryStatus,
             String strength,
             String dosageForm) {}
+
+    // ---- Metadata lookup responses ------------------------------------------
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record UomOption(String value, String label) {}
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record SupplierOption(String name, String supplierName) {}
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record WarehouseOption(String name, String warehouseName) {}
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record MetaListResponse<T>(List<T> data) {}
 }
