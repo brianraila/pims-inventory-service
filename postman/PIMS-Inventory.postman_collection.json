@@ -24,7 +24,8 @@
     { "key": "access_token",  "value": "",                                       "type": "string" },
     { "key": "product_id",    "value": "",                                       "type": "string" },
     { "key": "batch_id",      "value": "",                                       "type": "string" },
-    { "key": "draft_id",      "value": "",                                       "type": "string" }
+    { "key": "draft_id",      "value": "",                                       "type": "string" },
+    { "key": "order_id",      "value": "",                                       "type": "string" }
   ],
   "item": [
     {
@@ -475,6 +476,165 @@
               ]
             },
             "description": "Returns the manufacturer catalogue. Enable the `search` param to filter by name."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Metadata",
+      "description": "Lookup values for dropdowns — UOMs, suppliers, and warehouses. UOMs are static; suppliers and warehouses are fetched live from ERPNext.",
+      "item": [
+        {
+          "name": "List UOMs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/meta/uom",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "meta", "uom"]
+            },
+            "description": "Returns all supported unit-of-measure values (tablets, capsules, vials, etc.)."
+          }
+        },
+        {
+          "name": "List Suppliers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/meta/suppliers",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "meta", "suppliers"]
+            },
+            "description": "Returns all ERPNext Supplier records for the tenant. Use the `name` field as the supplier value when creating batches or purchase orders."
+          }
+        },
+        {
+          "name": "List Warehouses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/meta/warehouses",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "meta", "warehouses"]
+            },
+            "description": "Returns all non-group ERPNext Warehouse records for the tenant. Use the `name` field as the storage_location value when adding batches."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders (POS)",
+      "description": "POS checkout lifecycle. Create Draft auto-saves `order_id`.\n\nFlow:\n  1. POST /orders          — create draft\n  2. PATCH /orders/{id}/items — update cart items as needed\n  3. POST /orders/{id}/submit — finalise, deduct stock",
+      "item": [
+        {
+          "name": "List Orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/orders?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "orders"],
+              "query": [
+                { "key": "page",   "value": "1"  },
+                { "key": "limit",  "value": "20" },
+                { "key": "status", "value": "",   "disabled": true, "description": "draft | submitted | cancelled" },
+                { "key": "from",   "value": "",   "disabled": true, "description": "YYYY-MM-DD posting date from" },
+                { "key": "to",     "value": "",   "disabled": true, "description": "YYYY-MM-DD posting date to" }
+              ]
+            },
+            "description": "Lists Sales Invoices for the tenant (excludes cancelled). Enable status/from/to params to filter."
+          }
+        },
+        {
+          "name": "Create Draft Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.order_id) {",
+                  "    pm.collectionVariables.set('order_id', json.order_id);",
+                  "    pm.test('Draft created, order_id saved', () => pm.expect(json.order_id).to.be.a('string'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_name\": \"Walk-in Customer\",\n  \"prescription_id\": null,\n  \"items\": [\n    {\n      \"product_id\": \"{{product_id}}\",\n      \"quantity\": 2,\n      \"unit_price\": 120.00\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/orders",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "orders"]
+            },
+            "description": "Creates a draft Sales Invoice (docstatus=0). The `product_id` must be a PIMS product UUID from GET /products. `customer_name` defaults to 'Walk-in Customer' if omitted. On 201 the test script captures `order_id`."
+          }
+        },
+        {
+          "name": "Get Order",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/orders/{{order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "orders", "{{order_id}}"]
+            },
+            "description": "Fetches a single order (draft or submitted) with full line items, subtotal, tax, and grand total."
+          }
+        },
+        {
+          "name": "Update Order Items",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"product_id\": \"{{product_id}}\",\n      \"quantity\": 3,\n      \"unit_price\": 120.00\n    },\n    {\n      \"product_id\": \"<another-product-uuid>\",\n      \"quantity\": 1,\n      \"unit_price\": 350.00\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/orders/{{order_id}}/items",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "orders", "{{order_id}}", "items"]
+            },
+            "description": "Replaces the entire items list on a draft order. Call this each time the cashier adds, removes, or changes quantity of a product. Returns 422 if the order is already submitted or cancelled."
+          }
+        },
+        {
+          "name": "Submit Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_method\": \"cash\",\n  \"amount_received\": 300.00,\n  \"mpesa_phone\": null,\n  \"notes\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/orders/{{order_id}}/submit",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "orders", "{{order_id}}", "submit"]
+            },
+            "description": "Finalises the draft — triggers ERPNext submission hooks (stock deduction, GL entries). Payment details are stored in the invoice remarks.\n\npayment_method: cash | mpesa\nmpesa_phone required when payment_method is mpesa."
           }
         }
       ]
