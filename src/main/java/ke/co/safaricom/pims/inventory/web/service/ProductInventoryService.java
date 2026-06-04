@@ -894,19 +894,66 @@ public class ProductInventoryService {
     private static boolean matchesSearch(
             InventoryApiSchemas.ProductSummary p, String search, Map<String, Object> mergedExtras) {
         if (!StringUtils.hasText(search)) return true;
-        String q = search.strip().toLowerCase(Locale.ROOT);
-        if (p.productName().toLowerCase(Locale.ROOT).contains(q)
-                || p.genericName().toLowerCase(Locale.ROOT).contains(q)) {
-            return true;
+
+        // Build searchable corpus: product name, generic name, strength, dosage form, codes
+        List<String> corpus = new ArrayList<>();
+        corpus.add(p.productName());
+        corpus.add(p.genericName());
+        if (mergedExtras != null) {
+            for (String key : List.of("strength", "dosage_form", "ppb_code", "ndc_code", "terminology_id")) {
+                Object v = mergedExtras.get(key);
+                if (v != null && !v.toString().isBlank()) corpus.add(v.toString());
+            }
         }
-        if (mergedExtras == null || mergedExtras.isEmpty()) return false;
-        for (String key : List.of("ppb_code", "ndc_code", "terminology_id")) {
-            Object v = mergedExtras.get(key);
-            if (v != null && v.toString().toLowerCase(Locale.ROOT).contains(q)) {
-                return true;
+
+        // All query tokens must match something in the corpus (AND logic)
+        String[] tokens = search.strip().toLowerCase(Locale.ROOT).split("\\s+");
+        for (String token : tokens) {
+            if (!corpusMatchesToken(corpus, token)) return false;
+        }
+        return true;
+    }
+
+    private static boolean corpusMatchesToken(List<String> corpus, String token) {
+        for (String field : corpus) {
+            if (field == null || field.isBlank()) continue;
+            String f = field.toLowerCase(Locale.ROOT);
+            // Fast path: substring match covers partial typing and code lookups
+            if (f.contains(token)) return true;
+            // Fuzzy path: word-level edit distance for typo tolerance (min 4 chars)
+            if (token.length() >= 4) {
+                for (String word : f.split("[\\s\\-/,]+")) {
+                    if (word.length() >= 3 && editDistance(word, token) <= fuzzyThreshold(token)) {
+                        return true;
+                    }
+                }
             }
         }
         return false;
+    }
+
+    private static int fuzzyThreshold(String token) {
+        // Allow 1 edit for tokens up to 7 chars, 2 edits for longer words
+        return token.length() <= 7 ? 1 : 2;
+    }
+
+    private static int editDistance(String a, String b) {
+        int m = a.length(), n = b.length();
+        // Early exit: length difference alone exceeds any reasonable threshold
+        if (Math.abs(m - n) > 2) return Math.abs(m - n);
+        int[] prev = new int[n + 1];
+        int[] curr = new int[n + 1];
+        for (int j = 0; j <= n; j++) prev[j] = j;
+        for (int i = 1; i <= m; i++) {
+            curr[0] = i;
+            for (int j = 1; j <= n; j++) {
+                curr[j] = a.charAt(i - 1) == b.charAt(j - 1)
+                        ? prev[j - 1]
+                        : 1 + Math.min(prev[j - 1], Math.min(prev[j], curr[j - 1]));
+            }
+            int[] tmp = prev; prev = curr; curr = tmp;
+        }
+        return prev[n];
     }
 
     private static boolean duplicatePpbOrNdc(List<InventoryItemResponse> items, InventoryApiSchemas.CreateProductRequest req) {
