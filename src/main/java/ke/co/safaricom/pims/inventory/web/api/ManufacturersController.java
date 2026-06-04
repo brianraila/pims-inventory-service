@@ -16,7 +16,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 @RestController
-@RequestMapping(Constants.PUBLIC_API_ROOT + "/manufacturers")
+@RequestMapping(Constants.API_PREFIX + "/manufacturers")
 @Tag(name = "Manufacturers", description = "InventoryApiSchemas.Manufacturer catalogue (seeded MVP)")
 public class ManufacturersController {
 
