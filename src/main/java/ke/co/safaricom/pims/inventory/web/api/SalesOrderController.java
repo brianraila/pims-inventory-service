@@ -10,6 +10,7 @@ import ke.co.safaricom.pims.inventory.web.model.SalesOrderSchemas;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -66,6 +67,17 @@ public class SalesOrderController {
             @PathVariable("order_id") String orderId) {
         return tenants.resolveTenantId(auth, exchange)
                 .flatMap(t -> salesOrderService.getOrder(t, orderId));
+    }
+
+    @PatchMapping("/{order_id}/items")
+    @Operation(summary = "Replace the item list on a draft order")
+    public Mono<SalesOrderSchemas.OrderResponse> updateItems(
+            Authentication auth,
+            ServerWebExchange exchange,
+            @PathVariable("order_id") String orderId,
+            @Valid @RequestBody SalesOrderSchemas.UpdateOrderItemsRequest body) {
+        return tenants.resolveTenantId(auth, exchange)
+                .flatMap(t -> salesOrderService.updateItems(t, orderId, body));
     }
 
     @PostMapping("/{order_id}/submit")

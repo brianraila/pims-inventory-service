@@ -7,6 +7,8 @@ import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
+import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
+import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
 import ke.co.safaricom.pims.inventory.web.model.SalesOrderSchemas;
 import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
 import org.springframework.core.ParameterizedTypeReference;
@@ -23,10 +25,24 @@ import java.util.Map;
 @Service
 public class SalesOrderService {
 
-    private static final String DOCTYPE = "Sales Invoice";
+    // ---- ERPNext doctype & defaults ------------------------------------------
+    private static final String DOCTYPE       = "Sales Invoice";
     private static final String DEFAULT_CUSTOMER = "Walk-in Customer";
-    private static final String CURRENCY = "KES";
+    private static final String CURRENCY      = "KES";
 
+    // ---- ERPNext field keys (avoids SonarLint S1192) ------------------------
+    private static final String F_DOCTYPE      = "doctype";
+    private static final String F_NAME         = "name";
+    private static final String F_CUSTOMER     = "customer";
+    private static final String F_POSTING_DATE = "posting_date";
+    private static final String F_CURRENCY     = "currency";
+    private static final String F_UPDATE_STOCK = "update_stock";
+    private static final String F_IS_POS       = "is_pos";
+    private static final String F_ITEMS        = "items";
+    private static final String F_REMARKS      = "remarks";
+    private static final String F_AMOUNT       = "amount";
+
+    // ---- Query fields -------------------------------------------------------
     private static final String SI_LIST_FIELDS =
             "[\"name\",\"customer\",\"posting_date\",\"grand_total\",\"status\",\"docstatus\",\"currency\",\"creation\"]";
 
@@ -55,15 +71,32 @@ public class SalesOrderService {
         });
     }
 
+    // ---- Update line items on a draft ---------------------------------------
+
+    public Mono<SalesOrderSchemas.OrderResponse> updateItems(
+            String tenantId, String orderId, SalesOrderSchemas.UpdateOrderItemsRequest req) {
+        return router.getOne(tenantId, DOCTYPE, orderId, SINGLE_TYPE).flatMap(resp -> {
+            ErpNextDoc doc = resp.data();
+            if (doc.docstatus() != null && doc.docstatus() != 0) {
+                return Mono.error(new ServiceValidationException(
+                        "Cannot modify items on a " + docStatusLabel(doc.docstatus()) + " order"));
+            }
+            return inventoryService.listItems(tenantId).flatMap(allItems -> {
+                List<Map<String, Object>> newItems = resolveLineItems(tenantId, req.items(), allItems);
+                Map<String, Object> body = buildDraftBody(doc, orderId, newItems);
+                return router.replace(tenantId, DOCTYPE, orderId, body, SINGLE_TYPE)
+                        .map(updated -> toOrderResponse(updated.data(), newItems));
+            });
+        });
+    }
+
     // ---- Submit draft -------------------------------------------------------
 
     public Mono<SalesOrderSchemas.OrderResponse> submitOrder(
             String tenantId, String orderId, SalesOrderSchemas.SubmitOrderRequest req) {
-        // Call frappe.client.submit with the document name — Frappe loads it server-side and submits
         Map<String, Object> submitBody = new HashMap<>();
-        submitBody.put("doc", Map.of("doctype", DOCTYPE, "name", orderId));
+        submitBody.put("doc", Map.of(F_DOCTYPE, DOCTYPE, F_NAME, orderId));
 
-        // If payment notes provided, update remarks before submitting
         Mono<Void> prePatch = Mono.empty();
         if (req != null && (StringUtils.hasText(req.paymentMethod()) || StringUtils.hasText(req.notes()))) {
             prePatch = patchRemarks(tenantId, orderId, req);
@@ -77,17 +110,8 @@ public class SalesOrderService {
     private Mono<Void> patchRemarks(String tenantId, String orderId, SalesOrderSchemas.SubmitOrderRequest req) {
         return router.getOne(tenantId, DOCTYPE, orderId, SINGLE_TYPE).flatMap(resp -> {
             ErpNextDoc doc = resp.data();
-            String remarks = buildPaymentRemarks(req);
-            Map<String, Object> body = new HashMap<>();
-            body.put("doctype", DOCTYPE);
-            body.put("name", orderId);
-            body.put("customer", doc.customer());
-            body.put("posting_date", doc.postingDate());
-            body.put("currency", CURRENCY);
-            body.put("update_stock", 1);
-            body.put("is_pos", 0);
-            if (doc.items() != null) body.put("items", doc.items());
-            body.put("remarks", remarks);
+            Map<String, Object> body = buildDraftBody(doc, orderId, doc.items());
+            body.put(F_REMARKS, buildPaymentRemarks(req));
             return router.replace(tenantId, DOCTYPE, orderId, body, SINGLE_TYPE).then();
         });
     }
@@ -102,26 +126,23 @@ public class SalesOrderService {
         List<String> filters = new ArrayList<>();
         filters.add("[\"docstatus\",\"!=\",2]");
         if (StringUtils.hasText(status)) filters.add("[\"status\",\"=\",\"" + status + "\"]");
-        if (StringUtils.hasText(from)) filters.add("[\"posting_date\",\">=\",\"" + from + "\"]");
-        if (StringUtils.hasText(to)) filters.add("[\"posting_date\",\"<=\",\"" + to + "\"]");
-        if (!filters.isEmpty()) {
-            params.put("filters", "[" + String.join(",", filters) + "]");
-        }
-        int safeLimit = Math.max(1, Math.min(limit, 100));
-        int safePage = Math.max(1, page);
-        params.put("limit_page_length", String.valueOf(safeLimit));
-        params.put("limit_start", String.valueOf((safePage - 1) * safeLimit));
+        if (StringUtils.hasText(from))   filters.add("[\"posting_date\",\">=\",\"" + from + "\"]");
+        if (StringUtils.hasText(to))     filters.add("[\"posting_date\",\"<=\",\"" + to + "\"]");
+        if (!filters.isEmpty()) params.put("filters", "[" + String.join(",", filters) + "]");
 
-        return router.getList(tenantId, DOCTYPE, params, LIST_TYPE)
-                .map(resp -> {
-                    List<SalesOrderSchemas.OrderSummary> rows = resp.data().stream()
-                            .map(this::toOrderSummary)
-                            .toList();
-                    long total = rows.size();
-                    var pagination = new ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas.Pagination(
-                            safePage, safeLimit, total, (long) Math.ceil((double) total / safeLimit));
-                    return new SalesOrderSchemas.OrderListResponse(rows, pagination);
-                });
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        int safePage  = Math.max(1, page);
+        params.put("limit_page_length", String.valueOf(safeLimit));
+        params.put("limit_start",       String.valueOf((safePage - 1) * safeLimit));
+
+        return router.getList(tenantId, DOCTYPE, params, LIST_TYPE).map(resp -> {
+            List<SalesOrderSchemas.OrderSummary> rows = resp.data().stream()
+                    .map(this::toOrderSummary).toList();
+            long total = rows.size();
+            InventoryApiSchemas.Pagination pg = new InventoryApiSchemas.Pagination(
+                    safePage, safeLimit, total, (long) Math.ceil((double) total / safeLimit));
+            return new SalesOrderSchemas.OrderListResponse(rows, pg);
+        });
     }
 
     // ---- Get single ---------------------------------------------------------
@@ -137,80 +158,84 @@ public class SalesOrderService {
             String tenantId,
             List<SalesOrderSchemas.CreateOrderRequest.OrderItem> orderItems,
             List<InventoryItemResponse> allItems) {
-        List<Map<String, Object>> erpItems = new ArrayList<>();
+        List<Map<String, Object>> result = new ArrayList<>();
         for (SalesOrderSchemas.CreateOrderRequest.OrderItem oi : orderItems) {
             InventoryItemResponse match = allItems.stream()
                     .filter(it -> StableEntityIds.itemId(tenantId, it.id()).equals(oi.productId()))
                     .findFirst()
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Product not found: " + oi.productId()));
-            double amount = oi.quantity() * oi.unitPrice();
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + oi.productId()));
             Map<String, Object> line = new HashMap<>();
             line.put("item_code", match.id());
             line.put("item_name", match.name());
-            line.put("qty", oi.quantity());
-            line.put("rate", oi.unitPrice());
-            line.put("amount", amount);
+            line.put("qty",       oi.quantity());
+            line.put("rate",      oi.unitPrice());
+            line.put(F_AMOUNT,    oi.quantity() * oi.unitPrice());
             line.put("warehouse", properties.defaultWarehouse());
-            erpItems.add(line);
+            result.add(line);
         }
-        return erpItems;
+        return result;
     }
 
     private Map<String, Object> buildInvoiceBody(
             String customer, List<Map<String, Object>> items, String prescriptionId, int docstatus) {
         Map<String, Object> body = new HashMap<>();
-        body.put("doctype", DOCTYPE);
-        body.put("customer", customer);
-        body.put("posting_date", LocalDate.now().toString());
-        body.put("currency", CURRENCY);
-        body.put("update_stock", 1);
-        body.put("is_pos", 0);
-        body.put("docstatus", docstatus);
-        body.put("items", items);
+        body.put(F_DOCTYPE,      DOCTYPE);
+        body.put(F_CUSTOMER,     customer);
+        body.put(F_POSTING_DATE, LocalDate.now().toString());
+        body.put(F_CURRENCY,     CURRENCY);
+        body.put(F_UPDATE_STOCK, 1);
+        body.put(F_IS_POS,       0);
+        body.put("docstatus",    docstatus);
+        body.put(F_ITEMS,        items);
         if (StringUtils.hasText(prescriptionId)) {
-            body.put("remarks", "Prescription: " + prescriptionId);
+            body.put(F_REMARKS, "Prescription: " + prescriptionId);
         }
         return body;
     }
 
-    private static String resolveCustomer(String customerName) {
-        return StringUtils.hasText(customerName) ? customerName : DEFAULT_CUSTOMER;
+    /** Builds the minimal PUT body needed to update a draft without changing its core fields. */
+    private Map<String, Object> buildDraftBody(ErpNextDoc doc, String orderId, List<Map<String, Object>> items) {
+        Map<String, Object> body = new HashMap<>();
+        body.put(F_DOCTYPE,      DOCTYPE);
+        body.put(F_NAME,         orderId);
+        body.put(F_CUSTOMER,     doc.customer() != null ? doc.customer() : DEFAULT_CUSTOMER);
+        body.put(F_POSTING_DATE, doc.postingDate() != null ? doc.postingDate() : LocalDate.now().toString());
+        body.put(F_CURRENCY,     CURRENCY);
+        body.put(F_UPDATE_STOCK, 1);
+        body.put(F_IS_POS,       0);
+        if (items != null) body.put(F_ITEMS, items);
+        return body;
+    }
+
+    private static String resolveCustomer(String name) {
+        return StringUtils.hasText(name) ? name : DEFAULT_CUSTOMER;
     }
 
     private static String buildPaymentRemarks(SalesOrderSchemas.SubmitOrderRequest req) {
         if (req == null) return null;
         StringBuilder sb = new StringBuilder();
-        if (StringUtils.hasText(req.paymentMethod())) {
-            sb.append("Payment: ").append(req.paymentMethod().toUpperCase());
-        }
-        if (req.amountReceived() != null) {
-            sb.append(" | Received: KES ").append(req.amountReceived());
-        }
-        if (StringUtils.hasText(req.mpesaPhone())) {
-            sb.append(" | Phone: ").append(req.mpesaPhone());
-        }
-        if (StringUtils.hasText(req.notes())) {
-            sb.append(" | ").append(req.notes());
-        }
+        if (StringUtils.hasText(req.paymentMethod())) sb.append("Payment: ").append(req.paymentMethod().toUpperCase());
+        if (req.amountReceived() != null) sb.append(" | Received: KES ").append(req.amountReceived());
+        if (StringUtils.hasText(req.mpesaPhone())) sb.append(" | Phone: ").append(req.mpesaPhone());
+        if (StringUtils.hasText(req.notes())) sb.append(" | ").append(req.notes());
         return sb.isEmpty() ? null : sb.toString();
     }
 
     private SalesOrderSchemas.OrderResponse toOrderResponse(
             ErpNextDoc doc, List<Map<String, Object>> fallbackItems) {
+        List<Map<String, Object>> rawItems = doc.items() != null ? doc.items() : fallbackItems;
         List<SalesOrderSchemas.OrderLineItem> lines = extractLineItems(
-                doc.items() != null ? doc.items() : (fallbackItems != null ? fallbackItems : List.of()));
-        double subtotal = lines.stream().mapToDouble(SalesOrderSchemas.OrderLineItem::lineTotal).sum();
+                rawItems != null ? rawItems : List.of());
+        double subtotal   = lines.stream().mapToDouble(SalesOrderSchemas.OrderLineItem::lineTotal).sum();
         double grandTotal = doc.grandTotal() != null ? doc.grandTotal() : subtotal;
-        double taxAmount = doc.totalTaxesAndCharges() != null ? doc.totalTaxesAndCharges() : grandTotal - subtotal;
+        double taxAmount  = doc.totalTaxesAndCharges() != null
+                ? doc.totalTaxesAndCharges() : grandTotal - subtotal;
         return new SalesOrderSchemas.OrderResponse(
                 doc.name(),
                 docStatusLabel(doc.docstatus()),
                 doc.customer() != null ? doc.customer() : DEFAULT_CUSTOMER,
                 lines,
-                subtotal,
-                taxAmount,
-                grandTotal,
+                subtotal, taxAmount, grandTotal,
                 doc.currency() != null ? doc.currency() : CURRENCY,
                 doc.creation());
     }
@@ -227,26 +252,27 @@ public class SalesOrderService {
 
     private static List<SalesOrderSchemas.OrderLineItem> extractLineItems(List<Map<String, Object>> items) {
         return items.stream().map(m -> {
-            String code = str(m.get("item_code"));
-            String name = str(m.get("item_name"));
-            double qty = toDouble(m.get("qty"));
+            double qty  = toDouble(m.get("qty"));
             double rate = toDouble(m.get("rate"));
-            double amount = m.containsKey("amount") ? toDouble(m.get("amount")) : qty * rate;
-            return new SalesOrderSchemas.OrderLineItem(code, name, qty, rate, amount);
+            double lineTotal = m.containsKey(F_AMOUNT) ? toDouble(m.get(F_AMOUNT)) : qty * rate;
+            return new SalesOrderSchemas.OrderLineItem(
+                    str(m.get("item_code")), str(m.get("item_name")), qty, rate, lineTotal);
         }).toList();
     }
 
     private static String docStatusLabel(Integer docstatus) {
         if (docstatus == null) return "draft";
         return switch (docstatus) {
-            case 0 -> "draft";
-            case 1 -> "submitted";
-            case 2 -> "cancelled";
+            case 0  -> "draft";
+            case 1  -> "submitted";
+            case 2  -> "cancelled";
             default -> "unknown";
         };
     }
 
-    private static String str(Object o) { return o != null ? o.toString() : ""; }
+    private static String str(Object o) {
+        return o != null ? o.toString() : "";
+    }
 
     private static double toDouble(Object o) {
         if (o instanceof Number n) return n.doubleValue();

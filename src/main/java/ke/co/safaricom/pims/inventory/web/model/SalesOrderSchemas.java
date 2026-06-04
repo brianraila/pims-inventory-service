@@ -36,6 +36,12 @@ public final class SalesOrderSchemas {
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record UpdateOrderItemsRequest(
+            @NotEmpty @Valid List<CreateOrderRequest.OrderItem> items
+    ) {}
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record SubmitOrderRequest(
             /** "cash" or "mpesa" */
             String paymentMethod,
