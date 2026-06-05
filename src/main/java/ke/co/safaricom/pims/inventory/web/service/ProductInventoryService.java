@@ -719,6 +719,7 @@ public class ProductInventoryService {
         Enums.UnitOfMeasure uom = Enums.UnitOfMeasure.fromItemUom(it.unit());
         Enums.ProductCategory cat = Enums.ProductCategory.looseValueOf(it.category());
         List<Enums.ProductStatus> statuses = computeStatuses(total, it.reorderLevel(), it.isControlled(), batches);
+        Double unitPrice = weightedAverageUnitCost(batches);
         return new InventoryApiSchemas.ProductSummary(
                 StableEntityIds.itemId(tenantId, it.id()),
                 it.name(),
@@ -730,7 +731,22 @@ public class ProductInventoryService {
                 statuses,
                 null,
                 "",
-                "");
+                "",
+                unitPrice,
+                unitPrice != null ? "KES" : null);
+    }
+
+    private static Double weightedAverageUnitCost(List<BatchResponse> batches) {
+        List<BatchResponse> usable = batches.stream().filter(ProductInventoryService::isUsable).toList();
+        double totalQty = usable.stream().mapToDouble(BatchResponse::quantity).sum();
+        if (totalQty <= 0) {
+            return usable.stream().mapToDouble(BatchResponse::cost).filter(c -> c > 0).average().orElse(0) > 0
+                    ? usable.stream().mapToDouble(BatchResponse::cost).filter(c -> c > 0).average().getAsDouble()
+                    : null;
+        }
+        double weightedSum = usable.stream().mapToDouble(b -> b.quantity() * b.cost()).sum();
+        double avg = weightedSum / totalQty;
+        return avg > 0 ? avg : null;
     }
 
     private InventoryApiSchemas.ProductDetail buildDetail(
