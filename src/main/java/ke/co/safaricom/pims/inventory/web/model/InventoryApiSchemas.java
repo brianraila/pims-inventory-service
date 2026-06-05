@@ -50,7 +50,9 @@ public final class InventoryApiSchemas {
             List<Enums.ProductStatus> status,
             String imageUrl,
             String createdAt,
-            String updatedAt) {}
+            String updatedAt,
+            Double unitPrice,
+            String currency) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
