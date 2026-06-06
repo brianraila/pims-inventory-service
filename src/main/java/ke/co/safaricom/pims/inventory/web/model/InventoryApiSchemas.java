@@ -3,6 +3,7 @@ package ke.co.safaricom.pims.inventory.web.model;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import jakarta.validation.constraints.NotBlank;
 
 import java.util.Collections;
 import java.util.List;
@@ -43,7 +44,7 @@ public final class InventoryApiSchemas {
             java.util.UUID id,
             String productName,
             String genericName,
-            Enums.ProductCategory category,
+            String category,
             double totalStock,
             double availableQuantity,
             Enums.UnitOfMeasure unitOfMeasure,
@@ -75,7 +76,7 @@ public final class InventoryApiSchemas {
             String branch,
             String grnNumber,
             String manufacturer,
-            Enums.ProductCategory category,
+            String category,
             String createdAt,
             String updatedAt) {}
 
@@ -101,7 +102,7 @@ public final class InventoryApiSchemas {
             java.util.UUID id,
             String productName,
             String genericName,
-            Enums.ProductCategory category,
+            String category,
             double totalStock,
             double availableQuantity,
             Enums.UnitOfMeasure unitOfMeasure,
@@ -143,7 +144,7 @@ public final class InventoryApiSchemas {
             String productName,
             String genericName,
             java.util.UUID manufacturerId,
-            Enums.ProductCategory category,
+            String category,
             String ppbCode,
             String ndcCode,
             Enums.RegulatoryStatus regulatoryStatus,
@@ -164,7 +165,7 @@ public final class InventoryApiSchemas {
             String productName,
             String genericName,
             java.util.UUID manufacturerId,
-            Enums.ProductCategory category,
+            String category,
             String ppbCode,
             String ndcCode,
             Enums.RegulatoryStatus regulatoryStatus,
@@ -271,7 +272,7 @@ public final class InventoryApiSchemas {
             String brandName,
             String genericName,
             Manufacturer manufacturer,
-            Enums.ProductCategory category,
+            String category,
             String ppbCode,
             String ndcCode,
             Enums.RegulatoryStatus regulatoryStatus,
@@ -291,4 +292,19 @@ public final class InventoryApiSchemas {
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record MetaListResponse<T>(List<T> data) {}
+
+    // ---- Item Group (category) management ---------------------------------
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Category(String id, String name, String parentCategory, Boolean isGroup) {}
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record CreateCategoryRequest(
+            @NotBlank(message = "name is required") String name,
+            String parentCategory,
+            Boolean isGroup) {}
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record UpdateCategoryRequest(String name, String parentCategory, Boolean isGroup) {}
 }

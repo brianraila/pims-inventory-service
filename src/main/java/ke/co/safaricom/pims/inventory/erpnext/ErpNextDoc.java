@@ -66,6 +66,10 @@ public record ErpNextDoc(
 
         // --- Warehouse ---
         @JsonProperty("warehouse_name") String warehouseName,
+
+        // --- Item Group ---
+        @JsonProperty("item_group_name") String itemGroupName,
+        @JsonProperty("parent_item_group") String parentItemGroup,
         @JsonProperty("is_group") Integer isGroup,
 
         // --- Stock Entry ---

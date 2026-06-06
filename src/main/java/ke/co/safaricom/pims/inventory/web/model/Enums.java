@@ -7,26 +7,6 @@ public final class Enums {
 
     private Enums() {}
 
-    public enum ProductCategory {
-        Antibiotics,
-        Analgesics,
-        Diabetes,
-        Cardiovascular,
-        Gastrointestinal,
-        Antifungals,
-        Antivirals,
-        Vitamins,
-        Other;
-
-        public static ProductCategory looseValueOf(String name) {
-            if (name == null || name.isBlank()) return Other;
-            for (ProductCategory c : values()) {
-                if (c.name().equalsIgnoreCase(name.strip())) return c;
-            }
-            return Other;
-        }
-    }
-
     public enum ProductStatus {
         draft,
         available,

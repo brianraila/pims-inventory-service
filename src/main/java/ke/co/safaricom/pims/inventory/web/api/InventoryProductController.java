@@ -47,7 +47,7 @@ public class InventoryProductController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(required = false) String search,
-            @RequestParam(required = false) Enums.ProductCategory category,
+            @RequestParam(required = false) String category,
             @RequestParam(required = false) Enums.ProductStatus status,
             @RequestParam(value = "manufacturer_id", required = false) UUID manufacturerId) {
         return tenants.resolveTenantId(authentication, exchange)

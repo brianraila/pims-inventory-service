@@ -27,11 +27,90 @@ tags:
   - name: Purchase Orders
   - name: Terminology Service
   - name: Manufacturers
+  - name: Categories
 
 security:
   - BearerAuth: []
 
 paths:
+  /inventory/categories:
+    get:
+      tags: [Categories]
+      operationId: listCategories
+      responses:
+        '200':
+          description: List of ERPNext Item Groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryListResponse'
+    post:
+      tags: [Categories]
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+
+  /inventory/categories/{id}:
+    get:
+      tags: [Categories]
+      operationId: getCategory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+    put:
+      tags: [Categories]
+      operationId: updateCategory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+    delete:
+      tags: [Categories]
+      operationId: deleteCategory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+
   /inventory/products:
     get:
       tags: [Products]
@@ -46,7 +125,8 @@ paths:
         - name: category
           in: query
           schema:
-            $ref: '#/components/schemas/ProductCategory'
+            type: string
+            description: ERPNext Item Group name
         - name: status
           in: query
           schema:
@@ -433,16 +513,38 @@ components:
   schemas:
     ProductCategory:
       type: string
-      enum:
-        - Antibiotics
-        - Analgesics
-        - Diabetes
-        - Cardiovascular
-        - Gastrointestinal
-        - Antifungals
-        - Antivirals
-        - Vitamins
-        - Other
+      description: ERPNext Item Group name (use GET /inventory/categories to list valid values)
+
+    Category:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        parent_category: {type: string, nullable: true}
+        is_group: {type: boolean, nullable: true}
+
+    CreateCategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        parent_category: {type: string, nullable: true}
+        is_group: {type: boolean, nullable: true}
+
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        name: {type: string}
+        parent_category: {type: string, nullable: true}
+        is_group: {type: boolean, nullable: true}
+
+    CategoryListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
 
     ProductStatus:
       type: string
