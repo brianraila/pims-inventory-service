@@ -9,10 +9,25 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:ms-pims-inventory-service}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: ke.co.safaricom.pims.inventory.messaging
+        spring.json.value.default.type: ke.co.safaricom.pims.inventory.messaging.PaymentEvent
+
 erpnext:
   wrapper:
     url: ${ERPNEXT_WRAPPER_URL:}
     tenant-id: ${ERPNEXT_WRAPPER_TENANT_ID:}
+
+payments:
+  kafka:
+    topic: ${PAYMENTS_KAFKA_TOPIC:payment-events}
 
 # Canonical REST contract: classpath static/openapi/inventory-api-v1.yaml (also linked in Swagger UI).
 # Generated /v3/api-docs is for convenience; external publishers should prefer the versioned YAML.

@@ -88,5 +88,14 @@ public record ErpNextDoc(
         @JsonProperty("customer") String customer,
         @JsonProperty("currency") String currency,
         @JsonProperty("net_total") Double netTotal,
-        @JsonProperty("total_taxes_and_charges") Double totalTaxesAndCharges
+        @JsonProperty("total_taxes_and_charges") Double totalTaxesAndCharges,
+
+        // --- Payment (Sales Invoice + Payment Entry) ---
+        @JsonProperty("is_pos") Integer isPos,
+        @JsonProperty("paid_amount") Double paidAmount,
+        @JsonProperty("outstanding_amount") Double outstandingAmount,
+        @JsonProperty("mode_of_payment") String modeOfPayment,
+        @JsonProperty("reference_no") String referenceNo,
+        @JsonProperty("reference_date") String referenceDate,
+        @JsonProperty("party") String party
 ) {}
