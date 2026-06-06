@@ -45,3 +45,4 @@ application-dev.yml
 .env
 .env.*
 !.env.example
+postman/
