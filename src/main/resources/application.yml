@@ -17,17 +17,13 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: ke.co.safaricom.pims.inventory.messaging
-        spring.json.value.default.type: ke.co.safaricom.pims.inventory.messaging.PaymentEvent
+        spring.json.trusted.packages: ke.co.safaricom.pims.inventory.kafka.dto
+        spring.json.value.default.type: ke.co.safaricom.pims.inventory.kafka.dto.PaymentSuccessEvent
 
 erpnext:
   wrapper:
     url: ${ERPNEXT_WRAPPER_URL:}
     tenant-id: ${ERPNEXT_WRAPPER_TENANT_ID:}
-
-payments:
-  kafka:
-    topic: ${PAYMENTS_KAFKA_TOPIC:payment-events}
 
 kafka:
   topic:

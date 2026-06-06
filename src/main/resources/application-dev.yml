@@ -21,10 +21,6 @@ erpnext:
     url: http://185.218.124.26:8082
     tenant-id: abc-pharmacy-westlands
 
-payments:
-  kafka:
-    topic: payment-events
-
 kafka:
   topic:
     payment-success: payment-success

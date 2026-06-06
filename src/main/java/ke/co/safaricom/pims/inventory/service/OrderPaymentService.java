@@ -50,7 +50,7 @@ public class OrderPaymentService {
      * Preferred ERPNext "Mode of Payment" name per request-level payment method — tried first
      * (case-insensitively) before falling back to a normalised match against whatever modes are
      * actually configured for the tenant. Keeps the request-level vocabulary ({@code cash} /
-     * {@code mpesa} — also the Kafka {@link ke.co.safaricom.pims.inventory.messaging.PaymentEvent}
+     * {@code mpesa} — also the Kafka {@link ke.co.safaricom.pims.inventory.kafka.dto.PaymentSuccessEvent}
      * contract) stable while letting the authoritative ERPNext-side name vary per tenant, instead
      * of requiring it to be kept in sync via static config.
      */
