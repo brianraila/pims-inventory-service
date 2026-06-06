@@ -73,7 +73,7 @@ class InventoryProductControllerTest {
         InventoryApiSchemas.ProductListResponse response =
                 new InventoryApiSchemas.ProductListResponse(List.of(), pagination, null);
         when(service.listProducts(eq("t1"), eq(1), eq(5), eq("Amox"),
-                eq(Enums.ProductCategory.Antibiotics), eq(Enums.ProductStatus.available), any()))
+                eq("Antibiotics"), eq(Enums.ProductStatus.available), any()))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(uriBuilder -> uriBuilder.path(BASE)
@@ -267,7 +267,7 @@ class InventoryProductControllerTest {
                 new InventoryApiSchemas.BatchListResponse(List.of(),
                         new InventoryApiSchemas.Pagination(1, 10, 0, 0));
         return new InventoryApiSchemas.ProductDetail(
-                PRODUCT_ID, "Amoxicillin 500mg", "Amoxicillin", Enums.ProductCategory.Antibiotics,
+                PRODUCT_ID, "Amoxicillin 500mg", "Amoxicillin", "Antibiotics",
                 100.0, 90.0, Enums.UnitOfMeasure.capsules, 2, List.of(Enums.ProductStatus.available),
                 null, "", "",
                 null, "PPB-001", null, Enums.RegulatoryStatus.approved,

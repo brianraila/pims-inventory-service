@@ -50,6 +50,8 @@ class ProductInventoryServiceTest {
     private InventoryMapper inventoryMapper;
     @Mock
     private InventoryService inventoryService;
+    @Mock
+    private CategoryService categoryService;
 
     private ProductDraftMemoryStore drafts;
     private ProductInventoryService service;
@@ -57,7 +59,8 @@ class ProductInventoryServiceTest {
     @BeforeEach
     void setUp() {
         drafts = new ProductDraftMemoryStore();
-        service = new ProductInventoryService(router, inventoryMapper, inventoryService, drafts);
+        service = new ProductInventoryService(router, inventoryMapper, inventoryService, categoryService, drafts);
+        when(categoryService.validateLeafCategoryExists(anyString(), anyString())).thenReturn(Mono.empty());
     }
 
     // ---- helpers ----------------------------------------------------------------
@@ -95,7 +98,7 @@ class ProductInventoryServiceTest {
                 null, null, null,
                 null,              // item (Batch parent link)
                 null, null, null, null,
-                null, null, null, null,  // batchQty, supplierName, warehouseName, isGroup
+                null, null, null, null, null, null,  // batchQty, supplierName, warehouseName, itemGroupName, parentItemGroup, isGroup
                 null, null, null, null, null, null, null,
                 null, null, null, null, null,
                 null, null, null, null,   // customer, currency, netTotal, totalTaxesAndCharges
@@ -165,7 +168,7 @@ class ProductInventoryServiceTest {
     void listProducts_category_filter_excludes_non_matching() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, Enums.ProductCategory.Analgesics, null, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, "Analgesics", null, null))
                 .assertNext(resp -> assertThat(resp.data()).isEmpty())
                 .verifyComplete();
     }
@@ -174,7 +177,7 @@ class ProductInventoryServiceTest {
     void listProducts_category_filter_includes_matching() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, Enums.ProductCategory.Antibiotics, null, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, "Antibiotics", null, null))
                 .assertNext(resp -> assertThat(resp.data()).hasSize(1))
                 .verifyComplete();
     }
@@ -236,7 +239,7 @@ class ProductInventoryServiceTest {
     @SuppressWarnings("unchecked")
     void createProduct_success_creates_item_and_returns_detail() {
         InventoryApiSchemas.CreateProductRequest req = new InventoryApiSchemas.CreateProductRequest(
-                "Amoxicillin 500mg", "Amoxicillin", null, Enums.ProductCategory.Antibiotics,
+                "Amoxicillin 500mg", "Amoxicillin", null, "Antibiotics",
                 "PPB-001", null, null, "500mg", "Capsules", null, null, null,
                 Enums.UnitOfMeasure.capsules, 50.0, 500.0, null, null);
 
@@ -276,7 +279,7 @@ class ProductInventoryServiceTest {
         when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(existing)));
 
         InventoryApiSchemas.CreateProductRequest req = new InventoryApiSchemas.CreateProductRequest(
-                "Another Drug", "Drug", null, Enums.ProductCategory.Antibiotics,
+                "Another Drug", "Drug", null, "Antibiotics",
                 "PPB-001", null, null, null, null, null, null, null,
                 Enums.UnitOfMeasure.tablets, 10.0, 100.0, null, null);
 
@@ -288,7 +291,7 @@ class ProductInventoryServiceTest {
     @Test
     void createProduct_throws_validation_error_when_product_name_missing() {
         InventoryApiSchemas.CreateProductRequest req = new InventoryApiSchemas.CreateProductRequest(
-                "", "Generic", null, Enums.ProductCategory.Antibiotics,
+                "", "Generic", null, "Antibiotics",
                 null, null, null, null, null, null, null, null,
                 Enums.UnitOfMeasure.tablets, 10.0, 100.0, null, null);
 

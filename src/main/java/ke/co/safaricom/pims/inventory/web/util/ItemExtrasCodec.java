@@ -25,7 +25,7 @@ public final class ItemExtrasCodec {
             /* item_name updated separately */ }
         if (u.genericName() != null) map.put("generic_name", u.genericName());
         if (u.manufacturerId() != null) map.put("manufacturer_id", u.manufacturerId().toString());
-        if (u.category() != null) map.put("category", u.category().name());
+        if (u.category() != null) map.put("category", u.category());
         if (u.ppbCode() != null) map.put("ppb_code", u.ppbCode());
         if (u.ndcCode() != null) map.put("ndc_code", u.ndcCode());
         if (u.regulatoryStatus() != null) map.put("regulatory_status", u.regulatoryStatus().name());
@@ -45,7 +45,7 @@ public final class ItemExtrasCodec {
         Map<String, Object> m = new HashMap<>();
         if (r.genericName() != null) m.put("generic_name", r.genericName());
         if (r.manufacturerId() != null) m.put("manufacturer_id", r.manufacturerId().toString());
-        if (r.category() != null) m.put("category", r.category().name());
+        if (r.category() != null) m.put("category", r.category());
         if (r.ppbCode() != null) m.put("ppb_code", r.ppbCode());
         if (r.ndcCode() != null) m.put("ndc_code", r.ndcCode());
         if (r.regulatoryStatus() != null) m.put("regulatory_status", r.regulatoryStatus().name());

@@ -18,6 +18,7 @@ import ke.co.safaricom.pims.inventory.web.util.ItemExtrasCodec;
 import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
 import ke.co.safaricom.pims.inventory.web.util.ManufacturersCatalog;
 import ke.co.safaricom.pims.inventory.web.util.TerminologyStub;
+import ke.co.safaricom.pims.inventory.service.CategoryService;
 import ke.co.safaricom.pims.inventory.service.InventoryService;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.codec.multipart.FilePart;
@@ -36,16 +37,19 @@ public class ProductInventoryService {
     private final ErpNextTenantRouter router;
     private final InventoryMapper inventoryMapper;
     private final InventoryService inventoryService;
+    private final CategoryService categoryService;
     private final ProductDraftMemoryStore drafts;
 
     public ProductInventoryService(
             ErpNextTenantRouter router,
             InventoryMapper inventoryMapper,
             InventoryService inventoryService,
+            CategoryService categoryService,
             ProductDraftMemoryStore drafts) {
         this.router = router;
         this.inventoryMapper = inventoryMapper;
         this.inventoryService = inventoryService;
+        this.categoryService = categoryService;
         this.drafts = drafts;
     }
 
@@ -65,7 +69,7 @@ public class ProductInventoryService {
             int page,
             int limit,
             String search,
-            Enums.ProductCategory category,
+            String category,
             Enums.ProductStatus statusFilter,
             UUID manufacturerIdFilter) {
         return listItemsEnriched(tenantId)
@@ -86,7 +90,8 @@ public class ProductInventoryService {
                                     double available = stockLevels.getOrDefault(it.id(), 0.0);
                                     InventoryApiSchemas.ProductSummary p = toSummary(tenantId, it, itemBatches, available);
                                     if (!matchesSearch(p, search, ex)) continue;
-                                    if (category != null && p.category() != category) continue;
+                                    if (category != null && !category.isBlank()
+                                            && (p.category() == null || !p.category().equalsIgnoreCase(category))) continue;
                                     if (manufacturerIdFilter != null) {
                                         Object mid = ex.get("manufacturer_id");
                                         if (mid == null) continue;
@@ -298,7 +303,8 @@ public class ProductInventoryService {
 
     public Mono<InventoryApiSchemas.ProductDetail> createProduct(String tenantId, InventoryApiSchemas.CreateProductRequest req) {
         validateCreate(req);
-        return inventoryService.listItems(tenantId).flatMap(existing -> {
+        return categoryService.validateLeafCategoryExists(tenantId, req.category())
+                .then(inventoryService.listItems(tenantId).flatMap(existing -> {
             if (duplicatePpbOrNdc(existing, req)) {
                 return Mono.error(new ConflictException("Duplicate PPB code or NDC already exists"));
             }
@@ -307,7 +313,7 @@ public class ProductInventoryService {
             body.put("doctype", "Item");
             body.put("item_code", itemCode);
             body.put("item_name", req.productName());
-            body.put("item_group", req.category() != null ? req.category().name() : "Products");
+            body.put("item_group", req.category());
             body.put("stock_uom", req.unitOfMeasure() != null ? mapUom(req.unitOfMeasure()) : "Nos");
             body.put("is_stock_item", 1);
             body.put("has_batch_no", 1);
@@ -318,11 +324,14 @@ public class ProductInventoryService {
                     .create(tenantId, "Item", body, SINGLE_TYPE)
                     .flatMap(created -> chainInitialBatches(tenantId, itemCode, req))
                     .then(getProduct(tenantId, StableEntityIds.itemId(tenantId, itemCode)));
-        });
+        }));
     }
 
     public Mono<InventoryApiSchemas.ProductDetail> updateProduct(String tenantId, UUID productId, InventoryApiSchemas.UpdateProductRequest u) {
-        return resolveItemName(tenantId, productId)
+        Mono<Void> categoryCheck = StringUtils.hasText(u.category())
+                ? categoryService.validateLeafCategoryExists(tenantId, u.category())
+                : Mono.empty();
+        return categoryCheck.then(resolveItemName(tenantId, productId)
                 .flatMap(itemName -> router
                         .getOne(tenantId, "Item", itemName, SINGLE_TYPE)
                         .flatMap(one -> {
@@ -332,7 +341,7 @@ public class ProductInventoryService {
                             body.put("name", doc.name());
                             body.put("item_code", doc.name());
                             body.put("item_name", u.productName() != null ? u.productName() : doc.itemName());
-                            body.put("item_group", u.category() != null ? u.category().name() : doc.itemGroup());
+                            body.put("item_group", u.category() != null ? u.category() : doc.itemGroup());
                             body.put("stock_uom", u.unitOfMeasure() != null ? mapUom(u.unitOfMeasure()) : doc.stockUom());
                             populateCustomFieldsFromDoc(body, doc);
                             overlayUpdateCustomFields(body, u);
@@ -341,7 +350,7 @@ public class ProductInventoryService {
                             body.put("description", desc);
                             return router.replace(tenantId, "Item", doc.name(), body, SINGLE_TYPE);
                         })
-                        .then(getProduct(tenantId, productId)));
+                        .then(getProduct(tenantId, productId))));
     }
 
     public Mono<Void> deleteProduct(String tenantId, UUID productId) {
@@ -765,7 +774,7 @@ public class ProductInventoryService {
         Map<String, Object> ex = mergedExtras(it);
         String genericDisplay = ItemExtrasCodec.displayGenericName(it.genericName(), ex);
         Enums.UnitOfMeasure uom = Enums.UnitOfMeasure.fromItemUom(it.unit());
-        Enums.ProductCategory cat = Enums.ProductCategory.looseValueOf(it.category());
+        String cat = resolveCategory(it, ex);
         List<Enums.ProductStatus> statuses = computeStatuses(total, it.reorderLevel(), it.isControlled(), batches);
         Double unitPrice = weightedAverageUnitCost(batches);
         return new InventoryApiSchemas.ProductSummary(
@@ -803,10 +812,9 @@ public class ProductInventoryService {
             InventoryApiSchemas.BatchListResponse batchList, double availableQuantity) {
         double total = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
-        Enums.ProductCategory cat =
-                ex.containsKey("category")
-                        ? Enums.ProductCategory.looseValueOf(ex.get("category").toString())
-                        : Enums.ProductCategory.looseValueOf(it.category());
+        String cat = ex.containsKey("category")
+                ? ex.get("category").toString()
+                : resolveCategory(it, ex);
         Enums.UnitOfMeasure uom =
                 ex.containsKey("unit_of_measure")
                         ? ItemExtrasCodec.uom(ex.get("unit_of_measure").toString())
@@ -902,6 +910,11 @@ public class ProductInventoryService {
     }
 
     private InventoryApiSchemas.Batch toApiBatch(String tenantId, String itemCode, BatchResponse b) {
+        return toApiBatch(tenantId, itemCode, b, null);
+    }
+
+    private InventoryApiSchemas.Batch toApiBatch(
+            String tenantId, String itemCode, BatchResponse b, String category) {
         return new InventoryApiSchemas.Batch(
                 StableEntityIds.batchId(tenantId, b.id()),
                 StableEntityIds.itemId(tenantId, itemCode),
@@ -920,9 +933,16 @@ public class ProductInventoryService {
                 b.branch(),
                 b.grn(),
                 b.manufacturer(),
-                Enums.ProductCategory.Other,
+                category,
                 "",
                 "");
+    }
+
+    private static String resolveCategory(InventoryItemResponse it, Map<String, Object> ex) {
+        if (ex.containsKey("category") && ex.get("category") != null) {
+            return ex.get("category").toString();
+        }
+        return it.category();
     }
 
     private static Enums.BatchStatus mappedBatchEnum(String legacy) {
@@ -1043,7 +1063,7 @@ public class ProductInventoryService {
         if (r == null
                 || !StringUtils.hasText(r.productName())
                 || !StringUtils.hasText(r.genericName())
-                || r.category() == null
+                || !StringUtils.hasText(r.category())
                 || r.unitOfMeasure() == null
                 || r.reorderLevel() == null
                 || r.maximumStock() == null) {
