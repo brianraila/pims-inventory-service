@@ -4,6 +4,7 @@ import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.config.ErpNextProperties;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
@@ -41,6 +42,8 @@ public class SalesOrderService {
     private static final String F_ITEMS        = "items";
     private static final String F_REMARKS      = "remarks";
     private static final String F_AMOUNT       = "amount";
+    private static final String F_ITEM_CODE    = "item_code";
+    private static final String F_ITEM_NAME    = "item_name";
 
     // ---- Query fields -------------------------------------------------------
     private static final String SI_LIST_FIELDS =
@@ -64,10 +67,12 @@ public class SalesOrderService {
             String tenantId, SalesOrderSchemas.CreateOrderRequest req) {
         return inventoryService.listItems(tenantId).flatMap(allItems -> {
             List<Map<String, Object>> erpItems = resolveLineItems(tenantId, req.items(), allItems);
-            String customer = resolveCustomer(req.customerName());
-            Map<String, Object> body = buildInvoiceBody(customer, erpItems, req.prescriptionId(), 0);
-            return router.create(tenantId, DOCTYPE, body, SINGLE_TYPE)
-                    .map(resp -> toOrderResponse(resp.data(), erpItems));
+            return ensureStockAvailable(tenantId, erpItems).then(Mono.defer(() -> {
+                String customer = resolveCustomer(req.customerName());
+                Map<String, Object> body = buildInvoiceBody(customer, erpItems, req.prescriptionId(), 0);
+                return router.create(tenantId, DOCTYPE, body, SINGLE_TYPE)
+                        .map(resp -> toOrderResponse(resp.data(), erpItems));
+            }));
         });
     }
 
@@ -83,27 +88,64 @@ public class SalesOrderService {
             }
             return inventoryService.listItems(tenantId).flatMap(allItems -> {
                 List<Map<String, Object>> newItems = resolveLineItems(tenantId, req.items(), allItems);
-                Map<String, Object> body = buildDraftBody(doc, orderId, newItems);
-                return router.replace(tenantId, DOCTYPE, orderId, body, SINGLE_TYPE)
-                        .map(updated -> toOrderResponse(updated.data(), newItems));
+                return ensureStockAvailable(tenantId, newItems).then(Mono.defer(() -> {
+                    Map<String, Object> body = buildDraftBody(doc, orderId, newItems);
+                    return router.replace(tenantId, DOCTYPE, orderId, body, SINGLE_TYPE)
+                            .map(updated -> toOrderResponse(updated.data(), newItems));
+                }));
             });
         });
+    }
+
+    /** Rejects with {@link ServiceValidationException} if any resolved line exceeds available stock. */
+    private Mono<Void> ensureStockAvailable(String tenantId, List<Map<String, Object>> erpItems) {
+        List<String> itemCodes = erpItems.stream()
+                .map(item -> (String) item.get(F_ITEM_CODE))
+                .distinct()
+                .toList();
+        return inventoryService.getStockLevels(tenantId, itemCodes, properties.defaultWarehouse())
+                .flatMap(stockLevels -> {
+                    for (Map<String, Object> item : erpItems) {
+                        String itemCode = (String) item.get(F_ITEM_CODE);
+                        double requested = toDouble(item.get("qty"));
+                        double available = stockLevels.getOrDefault(itemCode, 0.0);
+                        if (requested > available) {
+                            return Mono.error(new ServiceValidationException(
+                                    "Insufficient stock for " + item.get(F_ITEM_NAME)
+                                            + ": requested " + requested + ", available " + available));
+                        }
+                    }
+                    return Mono.empty();
+                });
     }
 
     // ---- Submit draft -------------------------------------------------------
 
     public Mono<SalesOrderSchemas.OrderResponse> submitOrder(
             String tenantId, String orderId, SalesOrderSchemas.SubmitOrderRequest req) {
-        Map<String, Object> submitBody = new HashMap<>();
-        submitBody.put("doc", Map.of(F_DOCTYPE, DOCTYPE, F_NAME, orderId));
-
         Mono<Void> prePatch = Mono.empty();
         if (req != null && (StringUtils.hasText(req.paymentMethod()) || StringUtils.hasText(req.notes()))) {
             prePatch = patchRemarks(tenantId, orderId, req);
         }
 
+        // The submit RPC reconstructs its working document purely from the "doc" payload it's
+        // handed: frappe.get_doc on a plain dict populates an in-memory doc straight from that
+        // dict's own keys, doing no DB load at all. So echoing back only a handful of fields
+        // (doctype, name, modified, docstatus) leaves the rest — items, customer, and so on —
+        // empty and fails validate(). Fetching the complete current document raw, after any
+        // pre-patch (which itself bumps "modified"), both supplies everything validate() needs
+        // and naturally satisfies check_if_latest's optimistic-lock comparison on "modified" —
+        // exactly what the desk UI does when you click Submit: it posts back its locally-cached
+        // copy of the loaded document.
         return prePatch
-                .then(router.callMethod(tenantId, "frappe.client.submit", submitBody, SINGLE_TYPE))
+                .then(router.getOne(tenantId, DOCTYPE, orderId, RAW_SINGLE_TYPE))
+                .map(ErpNextSingleResponse::data)
+                .flatMap(latest -> {
+                    Map<String, Object> submitBody = new HashMap<>();
+                    submitBody.put("doc", latest);
+                    return router.callMethod(tenantId, "frappe.client.submit", submitBody, SUBMIT_TYPE)
+                            .then(router.getOne(tenantId, DOCTYPE, orderId, SINGLE_TYPE));
+                })
                 .map(resp -> toOrderResponse(resp.data(), null));
     }
 
@@ -165,8 +207,8 @@ public class SalesOrderService {
                     .findFirst()
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + oi.productId()));
             Map<String, Object> line = new HashMap<>();
-            line.put("item_code", match.id());
-            line.put("item_name", match.name());
+            line.put(F_ITEM_CODE, match.id());
+            line.put(F_ITEM_NAME, match.name());
             line.put("qty",       oi.quantity());
             line.put("rate",      oi.unitPrice());
             line.put(F_AMOUNT,    oi.quantity() * oi.unitPrice());
@@ -184,7 +226,7 @@ public class SalesOrderService {
         body.put(F_POSTING_DATE, LocalDate.now().toString());
         body.put(F_CURRENCY,     CURRENCY);
         body.put(F_UPDATE_STOCK, 1);
-        body.put(F_IS_POS,       0);
+        body.put(F_IS_POS,       1);
         body.put("docstatus",    docstatus);
         body.put(F_ITEMS,        items);
         if (StringUtils.hasText(prescriptionId)) {
@@ -202,7 +244,7 @@ public class SalesOrderService {
         body.put(F_POSTING_DATE, doc.postingDate() != null ? doc.postingDate() : LocalDate.now().toString());
         body.put(F_CURRENCY,     CURRENCY);
         body.put(F_UPDATE_STOCK, 1);
-        body.put(F_IS_POS,       0);
+        body.put(F_IS_POS,       1);
         if (items != null) body.put(F_ITEMS, items);
         return body;
     }
@@ -256,7 +298,7 @@ public class SalesOrderService {
             double rate = toDouble(m.get("rate"));
             double lineTotal = m.containsKey(F_AMOUNT) ? toDouble(m.get(F_AMOUNT)) : qty * rate;
             return new SalesOrderSchemas.OrderLineItem(
-                    str(m.get("item_code")), str(m.get("item_name")), qty, rate, lineTotal);
+                    str(m.get(F_ITEM_CODE)), str(m.get(F_ITEM_NAME)), qty, rate, lineTotal);
         }).toList();
     }
 
@@ -284,5 +326,13 @@ public class SalesOrderService {
             new ParameterizedTypeReference<>() {};
 
     private static final ParameterizedTypeReference<ErpNextSingleResponse<ErpNextDoc>> SINGLE_TYPE =
+            new ParameterizedTypeReference<>() {};
+
+    private static final ParameterizedTypeReference<ErpNextSingleResponse<Map<String, Object>>> RAW_SINGLE_TYPE =
+            new ParameterizedTypeReference<>() {};
+
+    // frappe.client.submit is an /api/method/* RPC — Frappe wraps its return value in
+    // {"message": ...}, not the {"data": ...} envelope used by /api/resource/* endpoints.
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<ErpNextDoc>> SUBMIT_TYPE =
             new ParameterizedTypeReference<>() {};
 }

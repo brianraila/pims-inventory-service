@@ -42,6 +42,7 @@ class ProductInventoryServiceTest {
 
     private static final String TENANT = "test-tenant";
     private static final String ITEM_CODE = "PIMS-ITEM-001";
+    private static final String WAREHOUSE = "Main Warehouse";
 
     @Mock
     private ErpNextTenantRouter router;
@@ -97,7 +98,8 @@ class ProductInventoryServiceTest {
                 null, null, null, null,  // batchQty, supplierName, warehouseName, isGroup
                 null, null, null, null, null, null, null,
                 null, null, null, null, null,
-                null, null, null, null);  // customer, currency, netTotal, totalTaxesAndCharges
+                null, null, null, null,   // customer, currency, netTotal, totalTaxesAndCharges
+                null, null, null, null, null, null, null);  // isPos, paidAmount, outstandingAmount, modeOfPayment, referenceNo, referenceDate, party
     }
 
     private void stubListItemsAndBatches(String itemCode, double qty) {
@@ -106,6 +108,9 @@ class ProductInventoryServiceTest {
         when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
         when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of(batchResp)));
         when(inventoryMapper.copyWithBatches(eq(itemResp), anyList())).thenReturn(itemResp);
+        when(inventoryService.defaultWarehouse()).thenReturn(WAREHOUSE);
+        when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE)))
+                .thenReturn(Mono.just(Map.of(itemCode, qty - 10.0)));
     }
 
     // ---- listProducts -----------------------------------------------------------
@@ -120,6 +125,20 @@ class ProductInventoryServiceTest {
                     assertThat(resp.pagination().page()).isEqualTo(1);
                     assertThat(resp.pagination().limit()).isEqualTo(10);
                     assertThat(resp.pagination().total()).isEqualTo(1);
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void listProducts_includes_available_quantity_distinct_from_total_stock() {
+        stubListItemsAndBatches(ITEM_CODE, 100.0);
+
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null))
+                .assertNext(resp -> {
+                    InventoryApiSchemas.ProductSummary summary = resp.data().get(0);
+                    assertThat(summary.totalStock()).isEqualTo(100.0);
+                    assertThat(summary.availableQuantity()).isEqualTo(90.0);
+                    assertThat(summary.availableQuantity()).isNotEqualTo(summary.totalStock());
                 })
                 .verifyComplete();
     }
@@ -198,6 +217,8 @@ class ProductInventoryServiceTest {
         when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of()));
         when(inventoryMapper.copyWithBatches(eq(itemA), anyList())).thenReturn(itemA);
         when(inventoryMapper.copyWithBatches(eq(itemB), anyList())).thenReturn(itemB);
+        when(inventoryService.defaultWarehouse()).thenReturn(WAREHOUSE);
+        when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE))).thenReturn(Mono.just(Map.of()));
 
         StepVerifier.create(service.listProducts(TENANT, 2, 1, null, null, null, null))
                 .assertNext(resp -> {
@@ -236,6 +257,8 @@ class ProductInventoryServiceTest {
                 });
         when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of()));
         when(inventoryMapper.copyWithBatches(any(), anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(inventoryService.defaultWarehouse()).thenReturn(WAREHOUSE);
+        when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE))).thenReturn(Mono.just(Map.of()));
 
         StepVerifier.create(service.createProduct(TENANT, req))
                 .assertNext(detail -> {
@@ -351,6 +374,19 @@ class ProductInventoryServiceTest {
                 .assertNext(detail -> {
                     assertThat(detail.id()).isEqualTo(productId);
                     assertThat(detail.batches()).isNotNull();
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void getProduct_includes_available_quantity_distinct_from_total_stock() {
+        stubListItemsAndBatches(ITEM_CODE, 100.0);
+        UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
+
+        StepVerifier.create(service.getProduct(TENANT, productId))
+                .assertNext(detail -> {
+                    assertThat(detail.totalStock()).isEqualTo(100.0);
+                    assertThat(detail.availableQuantity()).isEqualTo(90.0);
                 })
                 .verifyComplete();
     }

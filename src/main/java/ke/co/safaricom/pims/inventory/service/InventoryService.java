@@ -6,6 +6,7 @@ import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.api.dto.StockAdjustmentResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.config.ErpNextProperties;
@@ -19,6 +20,7 @@ import reactor.core.publisher.Mono;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class InventoryService {
@@ -62,6 +64,31 @@ public class InventoryService {
                 .map(response -> mapper.toItemResponse(response.data()));
     }
 
+    // ---- Stock levels --------------------------------------------------------
+
+    /** Available quantity (actual - reserved) per item code in the given warehouse, from ERPNext's Bin doctype. */
+    public Mono<Map<String, Double>> getStockLevels(String tenantId, List<String> itemCodes, String warehouse) {
+        if (itemCodes.isEmpty()) return Mono.just(Map.of());
+
+        String codes = itemCodes.stream()
+                .map(code -> "\"" + code + "\"")
+                .collect(Collectors.joining(",", "[", "]"));
+        Map<String, String> params = new HashMap<>();
+        params.put(PARAM_FIELDS, "[\"item_code\",\"actual_qty\",\"reserved_qty\"]");
+        params.put(PARAM_FILTERS, "[[\"item_code\",\"in\"," + codes + "],[\"warehouse\",\"=\",\"" + warehouse + "\"]]");
+
+        return router.getList(tenantId, "Bin", params, LIST_TYPE)
+                .map(response -> response.data().stream()
+                        .collect(Collectors.toMap(
+                                ErpNextDoc::itemCode,
+                                doc -> nullToZero(doc.actualQty()) - nullToZero(doc.reservedQty()),
+                                (a, b) -> a)));
+    }
+
+    private static double nullToZero(Double value) {
+        return value != null ? value : 0;
+    }
+
     // ---- Batches ------------------------------------------------------------
 
     public Mono<List<BatchResponse>> listBatches(String tenantId) {
@@ -100,8 +127,39 @@ public class InventoryService {
         body.put("remarks", request.reason());
         body.put("items", List.of(buildStockEntryItem(request)));
 
+        // ERPNext only books the quantity into Bin.actual_qty once the Stock Entry is
+        // *submitted* — a draft has no stock effect, so chain an immediate submit after create.
         return router.create(tenantId, DOCTYPE_STOCK_ENTRY, body, SINGLE_TYPE)
-                .map(response -> mapper.toAdjustmentResponse(response.data()));
+                .map(ErpNextSingleResponse::data)
+                .map(ErpNextDoc::name)
+                .flatMap(name -> submitStockEntry(tenantId, name))
+                .map(mapper::toAdjustmentResponse);
+    }
+
+    /**
+     * Re-fetches the freshly-created draft <em>in full</em> and submits it via
+     * {@code frappe.client.submit} — this is what books the quantity into ERPNext's Bin.
+     *
+     * <p>The submit RPC reconstructs its working document purely from the {@code "doc"} payload
+     * it's handed — {@code frappe.get_doc(dict)} populates an in-memory doc straight from the
+     * dict's own keys, with no DB load — so echoing back only {@code {doctype, name, modified,
+     * docstatus}} leaves required fields like {@code purpose}/{@code items} empty and fails
+     * {@code validate()} with e.g. "Purpose must be one of 'Material Issue', 'Material
+     * Receipt', ...". Fetching the complete current document immediately beforehand both
+     * supplies everything {@code validate()} needs <em>and</em> naturally satisfies
+     * {@code check_if_latest()}'s optimistic-lock comparison on {@code modified} — exactly what
+     * the desk UI does when you click Submit (it posts back its locally-cached copy of the
+     * loaded document).
+     */
+    private Mono<ErpNextDoc> submitStockEntry(String tenantId, String name) {
+        return router.getOne(tenantId, DOCTYPE_STOCK_ENTRY, name, RAW_SINGLE_TYPE)
+                .map(ErpNextSingleResponse::data)
+                .flatMap(latest -> {
+                    Map<String, Object> body = new HashMap<>();
+                    body.put("doc", latest);
+                    return router.callMethod(tenantId, "frappe.client.submit", body, SUBMIT_TYPE);
+                })
+                .map(ErpNextMessageResponse::message);
     }
 
     // ---- Metadata lookups ---------------------------------------------------
@@ -147,5 +205,13 @@ public class InventoryService {
             new ParameterizedTypeReference<>() {};
 
     private static final ParameterizedTypeReference<ErpNextSingleResponse<ErpNextDoc>> SINGLE_TYPE =
+            new ParameterizedTypeReference<>() {};
+
+    private static final ParameterizedTypeReference<ErpNextSingleResponse<Map<String, Object>>> RAW_SINGLE_TYPE =
+            new ParameterizedTypeReference<>() {};
+
+    // frappe.client.submit is an /api/method/* RPC — Frappe wraps its return value in
+    // {"message": ...}, not the {"data": ...} envelope used by /api/resource/* endpoints.
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<ErpNextDoc>> SUBMIT_TYPE =
             new ParameterizedTypeReference<>() {};
 }

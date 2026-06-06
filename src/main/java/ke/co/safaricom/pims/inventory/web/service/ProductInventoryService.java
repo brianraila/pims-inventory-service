@@ -5,6 +5,7 @@ import ke.co.safaricom.pims.inventory.api.dto.CreateStockAdjustmentRequest;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.api.dto.StockAdjustmentResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import org.springframework.core.ParameterizedTypeReference;
@@ -51,6 +52,14 @@ public class ProductInventoryService {
     private static final ParameterizedTypeReference<ErpNextSingleResponse<ErpNextDoc>> SINGLE_TYPE =
             new ParameterizedTypeReference<>() {};
 
+    private static final ParameterizedTypeReference<ErpNextSingleResponse<Map<String, Object>>> RAW_SINGLE_TYPE =
+            new ParameterizedTypeReference<>() {};
+
+    // frappe.client.submit is an /api/method/* RPC — Frappe wraps its return value in
+    // {"message": ...}, not the {"data": ...} envelope used by /api/resource/* endpoints.
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<ErpNextDoc>> SUBMIT_TYPE =
+            new ParameterizedTypeReference<>() {};
+
     public Mono<InventoryApiSchemas.ProductListResponse> listProducts(
             String tenantId,
             int page,
@@ -61,42 +70,47 @@ public class ProductInventoryService {
             UUID manufacturerIdFilter) {
         return listItemsEnriched(tenantId)
                 .zipWith(inventoryService.listBatches(tenantId))
-                .map(tuple -> {
+                .flatMap(tuple -> {
                     List<InventoryItemResponse> items = tuple.getT1();
                     List<BatchResponse> batches = tuple.getT2();
-                    Map<String, List<BatchResponse>> byItem =
-                            batches.stream().collect(Collectors.groupingBy(BatchResponse::productId));
+                    List<String> itemCodes = items.stream().map(InventoryItemResponse::id).toList();
+                    return inventoryService.getStockLevels(tenantId, itemCodes, inventoryService.defaultWarehouse())
+                            .map(stockLevels -> {
+                                Map<String, List<BatchResponse>> byItem =
+                                        batches.stream().collect(Collectors.groupingBy(BatchResponse::productId));
 
-                    List<InventoryApiSchemas.ProductSummary> rows = new ArrayList<>();
-                    for (InventoryItemResponse it : items) {
-                        List<BatchResponse> itemBatches = byItem.getOrDefault(it.id(), List.of());
-                        Map<String, Object> ex = mergedExtras(it);
-                        InventoryApiSchemas.ProductSummary p = toSummary(tenantId, it, itemBatches);
-                        if (!matchesSearch(p, search, ex)) continue;
-                        if (category != null && p.category() != category) continue;
-                        if (manufacturerIdFilter != null) {
-                            Object mid = ex.get("manufacturer_id");
-                            if (mid == null) continue;
-                            try {
-                                if (!UUID.fromString(mid.toString()).equals(manufacturerIdFilter)) continue;
-                            } catch (Exception ignored) {
-                                continue;
-                            }
-                        }
-                        if (statusFilter != null && p.status().stream().noneMatch(s -> s == statusFilter)) continue;
-                        rows.add(p);
-                    }
+                                List<InventoryApiSchemas.ProductSummary> rows = new ArrayList<>();
+                                for (InventoryItemResponse it : items) {
+                                    List<BatchResponse> itemBatches = byItem.getOrDefault(it.id(), List.of());
+                                    Map<String, Object> ex = mergedExtras(it);
+                                    double available = stockLevels.getOrDefault(it.id(), 0.0);
+                                    InventoryApiSchemas.ProductSummary p = toSummary(tenantId, it, itemBatches, available);
+                                    if (!matchesSearch(p, search, ex)) continue;
+                                    if (category != null && p.category() != category) continue;
+                                    if (manufacturerIdFilter != null) {
+                                        Object mid = ex.get("manufacturer_id");
+                                        if (mid == null) continue;
+                                        try {
+                                            if (!UUID.fromString(mid.toString()).equals(manufacturerIdFilter)) continue;
+                                        } catch (Exception ignored) {
+                                            continue;
+                                        }
+                                    }
+                                    if (statusFilter != null && p.status().stream().noneMatch(s -> s == statusFilter)) continue;
+                                    rows.add(p);
+                                }
 
-                    rows.sort(Comparator.comparing(InventoryApiSchemas.ProductSummary::productName, String.CASE_INSENSITIVE_ORDER));
-                    long total = rows.size();
-                    int safeLimit = clampLimit(limit);
-                    int pg = normalizePage(page);
-                    int from = Math.max(0, (pg - 1) * safeLimit);
-                    int to = Math.min(rows.size(), from + safeLimit);
-                    List<InventoryApiSchemas.ProductSummary> slice = from >= rows.size() ? List.of() : rows.subList(from, to);
-                    InventoryApiSchemas.Pagination pageObj = new InventoryApiSchemas.Pagination(pg, safeLimit, total, calcTotalPages(total, safeLimit));
-                    return new InventoryApiSchemas.ProductListResponse(slice, pageObj,
-                            new InventoryApiSchemas.ProductListSummary(total, (long) batches.size()));
+                                rows.sort(Comparator.comparing(InventoryApiSchemas.ProductSummary::productName, String.CASE_INSENSITIVE_ORDER));
+                                long total = rows.size();
+                                int safeLimit = clampLimit(limit);
+                                int pg = normalizePage(page);
+                                int from = Math.max(0, (pg - 1) * safeLimit);
+                                int to = Math.min(rows.size(), from + safeLimit);
+                                List<InventoryApiSchemas.ProductSummary> slice = from >= rows.size() ? List.of() : rows.subList(from, to);
+                                InventoryApiSchemas.Pagination pageObj = new InventoryApiSchemas.Pagination(pg, safeLimit, total, calcTotalPages(total, safeLimit));
+                                return new InventoryApiSchemas.ProductListResponse(slice, pageObj,
+                                        new InventoryApiSchemas.ProductListSummary(total, (long) batches.size()));
+                            });
                 });
     }
 
@@ -263,7 +277,7 @@ public class ProductInventoryService {
     public Mono<InventoryApiSchemas.ProductDetail> getProduct(String tenantId, UUID productId) {
         return listItemsEnriched(tenantId)
                 .zipWith(inventoryService.listBatches(tenantId))
-                .map(tuple -> {
+                .flatMap(tuple -> {
                     InventoryItemResponse item =
                             tuple.getT1().stream().filter(it -> StableEntityIds.itemId(tenantId, it.id()).equals(productId)).findFirst()
                                     .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
@@ -277,7 +291,8 @@ public class ProductInventoryService {
                     List<InventoryApiSchemas.Batch> apiBatches =
                             batches.stream().map(b -> toApiBatch(tenantId, item.id(), b)).toList();
                     InventoryApiSchemas.BatchListResponse bl = new InventoryApiSchemas.BatchListResponse(apiBatches, pg);
-                    return buildDetail(tenantId, item, batches, bl);
+                    return inventoryService.getStockLevels(tenantId, List.of(item.id()), inventoryService.defaultWarehouse())
+                            .map(stockLevels -> buildDetail(tenantId, item, batches, bl, stockLevels.getOrDefault(item.id(), 0.0)));
                 });
     }
 
@@ -556,7 +571,39 @@ public class ProductInventoryService {
         entry.put("purpose", "Material Receipt");
         entry.put("remarks", "Initial batch stocking");
         entry.put("items", List.of(lineItem));
-        return router.create(tenantId, "Stock Entry", entry, SINGLE_TYPE).then();
+        // ERPNext only books quantity into Bin.actual_qty once the Stock Entry is *submitted* —
+        // a draft has no stock effect, so the create must be chained into an immediate submit.
+        return router.create(tenantId, "Stock Entry", entry, SINGLE_TYPE)
+                .map(ErpNextSingleResponse::data)
+                .map(ErpNextDoc::name)
+                .flatMap(name -> submitStockEntry(tenantId, name))
+                .then();
+    }
+
+    /**
+     * Re-fetches the freshly-created draft <em>in full</em> and submits it via
+     * {@code frappe.client.submit} — this is what books the quantity into ERPNext's Bin.
+     *
+     * <p>The submit RPC reconstructs its working document purely from the {@code "doc"} payload
+     * it's handed — {@code frappe.get_doc(dict)} populates an in-memory doc straight from the
+     * dict's own keys, with no DB load — so echoing back only {@code {doctype, name, modified,
+     * docstatus}} leaves required fields like {@code purpose}/{@code items} empty and fails
+     * {@code validate()} with e.g. "Purpose must be one of 'Material Issue', 'Material
+     * Receipt', ...". Fetching the complete current document immediately beforehand both
+     * supplies everything {@code validate()} needs <em>and</em> naturally satisfies
+     * {@code check_if_latest()}'s optimistic-lock comparison on {@code modified} — exactly what
+     * the desk UI does when you click Submit (it posts back its locally-cached copy of the
+     * loaded document).
+     */
+    private Mono<ErpNextDoc> submitStockEntry(String tenantId, String name) {
+        return router.getOne(tenantId, "Stock Entry", name, RAW_SINGLE_TYPE)
+                .map(ErpNextSingleResponse::data)
+                .flatMap(latest -> {
+                    Map<String, Object> body = new HashMap<>();
+                    body.put("doc", latest);
+                    return router.callMethod(tenantId, "frappe.client.submit", body, SUBMIT_TYPE);
+                })
+                .map(ErpNextMessageResponse::message);
     }
 
     private Mono<InventoryApiSchemas.Batch> lastCreatedBatchForItem(String tenantId, String itemCode, String batchNumberGuess) {
@@ -712,7 +759,8 @@ public class ProductInventoryService {
         return !"expired".equals(b.status()) && !"recalled".equals(b.status());
     }
 
-    private InventoryApiSchemas.ProductSummary toSummary(String tenantId, InventoryItemResponse it, List<BatchResponse> batches) {
+    private InventoryApiSchemas.ProductSummary toSummary(
+            String tenantId, InventoryItemResponse it, List<BatchResponse> batches, double availableQuantity) {
         double total = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
         String genericDisplay = ItemExtrasCodec.displayGenericName(it.genericName(), ex);
@@ -726,6 +774,7 @@ public class ProductInventoryService {
                 genericDisplay,
                 cat,
                 total,
+                availableQuantity,
                 uom,
                 batches.size(),
                 statuses,
@@ -750,7 +799,8 @@ public class ProductInventoryService {
     }
 
     private InventoryApiSchemas.ProductDetail buildDetail(
-            String tenantId, InventoryItemResponse it, List<BatchResponse> batches, InventoryApiSchemas.BatchListResponse batchList) {
+            String tenantId, InventoryItemResponse it, List<BatchResponse> batches,
+            InventoryApiSchemas.BatchListResponse batchList, double availableQuantity) {
         double total = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
         Enums.ProductCategory cat =
@@ -787,6 +837,7 @@ public class ProductInventoryService {
                 ItemExtrasCodec.displayGenericName(it.genericName(), ex),
                 cat,
                 total,
+                availableQuantity,
                 uom,
                 batches.size(),
                 statuses,

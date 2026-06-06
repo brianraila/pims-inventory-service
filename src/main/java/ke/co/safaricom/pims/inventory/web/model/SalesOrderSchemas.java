@@ -42,6 +42,17 @@ public final class SalesOrderSchemas {
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PayOrderRequest(
+            /** "cash" or "mpesa" */
+            @NotEmpty String paymentMethod,
+            @NotNull @Positive Double amountTendered,
+            /** M-Pesa transaction/receipt reference. Also doubles as the idempotency key for redelivered events. */
+            String transactionRef,
+            String notes
+    ) {}
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record SubmitOrderRequest(
             /** "cash" or "mpesa" */
             String paymentMethod,
@@ -86,6 +97,18 @@ public final class SalesOrderSchemas {
             double grandTotal,
             String currency,
             String createdAt
+    ) {}
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PaymentResponse(
+            String orderId,
+            String status,
+            String paymentMethod,
+            double amountPaid,
+            double changeDue,
+            String transactionRef,
+            String paymentEntryId
     ) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)

@@ -527,7 +527,7 @@
     },
     {
       "name": "Orders (POS)",
-      "description": "POS checkout lifecycle. Create Draft auto-saves `order_id`.\n\nFlow:\n  1. POST /orders          — create draft\n  2. PATCH /orders/{id}/items — update cart items as needed\n  3. POST /orders/{id}/submit — finalise, deduct stock",
+      "description": "POS checkout lifecycle. Create Draft auto-saves `order_id`.\n\nFlow:\n  1. POST /orders          — create draft\n  2. PATCH /orders/{id}/items — update cart items as needed\n  3. POST /orders/{id}/submit — finalise the invoice, deduct stock\n  4. POST /orders/{id}/pay    — record payment (creates AND submits a Payment Entry; flips invoice status to 'Paid')\n  5. GET  /orders/{id}/receipt — download a printable PDF receipt\n\nNote the order: ERPNext refuses to attach a Payment Entry to a still-draft Sales Invoice, so /submit must run before /pay.",
       "item": [
         {
           "name": "List Orders",
@@ -634,7 +634,40 @@
               "host": ["{{base_url}}"],
               "path": ["inventory", "orders", "{{order_id}}", "submit"]
             },
-            "description": "Finalises the draft — triggers ERPNext submission hooks (stock deduction, GL entries). Payment details are stored in the invoice remarks.\n\npayment_method: cash | mpesa\nmpesa_phone required when payment_method is mpesa."
+            "description": "Finalises the draft — deducts stock and flips docstatus 0 → 1 (draft → submitted). The optional payment_method/amount_received/notes here are NOT a recorded payment — they're only stamped onto the invoice's remarks for record-keeping. Call POST /orders/{id}/pay next to actually create and post the Payment Entry.\n\npayment_method: cash | mpesa\nmpesa_phone required when payment_method is mpesa."
+          }
+        },
+        {
+          "name": "Pay",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_method\": \"cash\",\n  \"amount_tendered\": 1500.00,\n  \"transaction_ref\": null,\n  \"notes\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/orders/{{order_id}}/pay",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "orders", "{{order_id}}", "pay"]
+            },
+            "description": "Records how a SUBMITTED order was paid: creates and immediately submits a Payment Entry against the Sales Invoice in one step — this is what posts the GL entries and flips the invoice's status to 'Paid'. Must be called AFTER /submit (ERPNext rejects a Payment Entry referencing a draft invoice with 'Sales Invoice X must be submitted').\n\npayment_method: cash | mpesa — resolved (case/punctuation-insensitively) against the tenant's configured Mode of Payment; the request fails clearly listing the available modes if none match\namount_tendered: amount the customer physically handed over; change_due in the response = max(0, amount_tendered - grand_total) (amount applied to the invoice is capped at grand_total)\ntransaction_ref: M-Pesa receipt number (omit/null for cash); also doubles as an idempotency key — replaying the same request with the same ref returns the already-recorded Payment Entry instead of creating a duplicate (this is also how the Kafka PaymentEvent consumer stays idempotent on redelivery)"
+          }
+        },
+        {
+          "name": "Receipt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/orders/{{order_id}}/receipt",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "orders", "{{order_id}}", "receipt"]
+            },
+            "description": "Downloads a printable PDF receipt (Content-Type: application/pdf) for a submitted order — generated on the fly with PDFBox from the invoice's items, totals, and recorded payment. The 'Dispensing pharmacist' name printed on it comes from the caller's JWT ('name', falling back to 'preferred_username'). In Postman, use 'Send and Download' (or the response's 'Save Response' menu) to save the PDF rather than viewing it as raw text."
           }
         }
       ]

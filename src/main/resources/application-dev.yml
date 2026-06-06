@@ -21,6 +21,14 @@ erpnext:
     url: http://185.218.124.26:8082
     tenant-id: abc-pharmacy-westlands
 
+payments:
+  kafka:
+    topic: payment-events
+
+kafka:
+  topic:
+    payment-success: payment-success
+
 # Canonical REST contract: classpath static/openapi/inventory-api-v1.yaml (also linked in Swagger UI).
 # Generated /v3/api-docs is for convenience; external publishers should prefer the versioned YAML.
 springdoc:

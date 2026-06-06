@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication
-@EnableConfigurationProperties(ErpNextProperties.class)
+@EnableConfigurationProperties({ErpNextProperties.class})
 public class PimsInventoryApplication {
 
     public static void main(String[] args) {
