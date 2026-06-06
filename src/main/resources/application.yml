@@ -29,6 +29,10 @@ payments:
   kafka:
     topic: ${PAYMENTS_KAFKA_TOPIC:payment-events}
 
+kafka:
+  topic:
+    payment-success: ${PAYMENT_SUCCESS_KAFKA_TOPIC:payment-success}
+
 # Canonical REST contract: classpath static/openapi/inventory-api-v1.yaml (also linked in Swagger UI).
 # Generated /v3/api-docs is for convenience; external publishers should prefer the versioned YAML.
 springdoc:

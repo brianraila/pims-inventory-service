@@ -31,6 +31,7 @@
             **/enums/*.*,
             **/erpnext/**/*,
             **/exception/*.*,
+            **/kafka/**,
             **/exception/**/*,
             **/mapper/**/*,
             **/model/*.*,
@@ -63,6 +64,7 @@
             **/erpnext/**/*,
             **/exception/*.*,
             **/exception/**/*,
+            **/kafka/**,
             **/mapper/**/*,
             **/model/*.*,
             **/model/**/*,
@@ -224,6 +226,7 @@
             <artifactId>commons-lang3</artifactId>
             <version>3.18.0</version>
         </dependency>
+
     </dependencies>
 
     <dependencyManagement>
