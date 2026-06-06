@@ -20,7 +20,7 @@ class ItemExtrasCodecTest {
                 "Amoxicillin 500mg",
                 "Amoxicillin",
                 MFR_ID,
-                Enums.ProductCategory.Antibiotics,
+                "Antibiotics",
                 "PPB-001",
                 "NDC-001",
                 Enums.RegulatoryStatus.approved,

@@ -150,7 +150,7 @@ class TerminologyControllerTest {
                 "Amoxicillin 500mg Capsules",
                 "Amoxicillin",
                 new InventoryApiSchemas.Manufacturer(UUID.randomUUID(), "Teva Pharmaceuticals", "IL", true),
-                Enums.ProductCategory.Antibiotics,
+                "Antibiotics",
                 "00093-4157-01",
                 "0900-0100-01",
                 Enums.RegulatoryStatus.approved,

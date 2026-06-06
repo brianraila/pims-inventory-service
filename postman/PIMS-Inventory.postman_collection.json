@@ -25,7 +25,8 @@
     { "key": "product_id",    "value": "",                                       "type": "string" },
     { "key": "batch_id",      "value": "",                                       "type": "string" },
     { "key": "draft_id",      "value": "",                                       "type": "string" },
-    { "key": "order_id",      "value": "",                                       "type": "string" }
+    { "key": "order_id",      "value": "",                                       "type": "string" },
+    { "key": "category_id",   "value": "",                                       "type": "string" }
   ],
   "item": [
     {
@@ -178,7 +179,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"wizard_step\": 1,\n  \"data\": {\n    \"product_name\": \"Metformin 850mg\",\n    \"generic_name\": \"Metformin Hydrochloride\",\n    \"category\": \"Diabetes\"\n  }\n}",
+              "raw": "{\n  \"wizard_step\": 1,\n  \"data\": {\n    \"product_name\": \"Metformin 850mg\",\n    \"generic_name\": \"Metformin Hydrochloride\",\n    \"category\": \"Antibiotics\"\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -210,7 +211,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"wizard_step\": 2,\n  \"data\": {\n    \"product_name\": \"Metformin 850mg\",\n    \"generic_name\": \"Metformin Hydrochloride\",\n    \"category\": \"Diabetes\",\n    \"ppb_code\": \"PPB-67890\",\n    \"regulatory_status\": \"approved\",\n    \"strength\": \"850mg\",\n    \"dosage_form\": \"Tablet\"\n  }\n}",
+              "raw": "{\n  \"wizard_step\": 2,\n  \"data\": {\n    \"product_name\": \"Metformin 850mg\",\n    \"generic_name\": \"Metformin Hydrochloride\",\n    \"category\": \"Antibiotics\",\n    \"ppb_code\": \"PPB-67890\",\n    \"regulatory_status\": \"approved\",\n    \"strength\": \"850mg\",\n    \"dosage_form\": \"Tablet\"\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -482,7 +483,7 @@
     },
     {
       "name": "Metadata",
-      "description": "Lookup values for dropdowns — UOMs, suppliers, and warehouses. UOMs are static; suppliers and warehouses are fetched live from ERPNext.",
+      "description": "Lookup values for dropdowns — UOMs, suppliers, and warehouses. UOMs are static; suppliers and warehouses are fetched live from ERPNext. Product categories (Item Groups) are managed via the **Categories** folder, not under /meta/*.",
       "item": [
         {
           "name": "List UOMs",
@@ -521,6 +522,106 @@
               "path": ["inventory", "meta", "warehouses"]
             },
             "description": "Returns all non-group ERPNext Warehouse records for the tenant. Use the `name` field as the storage_location value when adding batches."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "description": "ERPNext Item Group (product category) management. Create Category auto-saves `category_id`. Use the `name` or `id` field as the `category` value when creating products.",
+      "item": [
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/categories",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "categories"]
+            },
+            "description": "Returns all ERPNext Item Groups for the tenant. Use a leaf category `name` (is_group=false) as the product `category` value."
+          }
+        },
+        {
+          "name": "Get Category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/categories/{{category_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "categories", "{{category_id}}"]
+            },
+            "description": "Fetch a single Item Group by ERPNext document name (id)."
+          }
+        },
+        {
+          "name": "Create Category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.id) {",
+                  "    pm.collectionVariables.set('category_id', json.id);",
+                  "    pm.test('Category created, ID saved', () => pm.expect(json.id).to.be.a('string'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Antibiotics\",\n  \"parent_category\": \"All Item Groups\",\n  \"is_group\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/categories",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "categories"]
+            },
+            "description": "Creates a leaf Item Group. On 201 the test script captures `category_id` for use in product requests."
+          }
+        },
+        {
+          "name": "Update Category",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Antibiotics\",\n  \"parent_category\": \"All Item Groups\",\n  \"is_group\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/inventory/categories/{{category_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "categories", "{{category_id}}"]
+            },
+            "description": "Updates an Item Group. Only include fields to change."
+          }
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/inventory/categories/{{category_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["inventory", "categories", "{{category_id}}"]
+            },
+            "description": "Deletes an Item Group. Returns 204 No Content."
           }
         }
       ]

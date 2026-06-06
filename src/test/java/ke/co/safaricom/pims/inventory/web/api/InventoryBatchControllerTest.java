@@ -196,6 +196,6 @@ class InventoryBatchControllerTest {
                 BATCH_ID, PRODUCT_ID, "BATCH-001", Enums.BatchStatus.available,
                 100.0, Enums.UnitOfMeasure.capsules, "2024-01-01", "2027-01-01",
                 "Supplier A", null, 12.5, 1250.0, "KES", "Main Warehouse",
-                null, null, null, Enums.ProductCategory.Antibiotics, "", "");
+                null, null, null, "Antibiotics", "", "");
     }
 }
