@@ -268,7 +268,7 @@ class InventoryProductControllerTest {
                         new InventoryApiSchemas.Pagination(1, 10, 0, 0));
         return new InventoryApiSchemas.ProductDetail(
                 PRODUCT_ID, "Amoxicillin 500mg", "Amoxicillin", Enums.ProductCategory.Antibiotics,
-                100.0, Enums.UnitOfMeasure.capsules, 2, List.of(Enums.ProductStatus.available),
+                100.0, 90.0, Enums.UnitOfMeasure.capsules, 2, List.of(Enums.ProductStatus.available),
                 null, "", "",
                 null, "PPB-001", null, Enums.RegulatoryStatus.approved,
                 "500mg", "Capsules", null, null, null,
