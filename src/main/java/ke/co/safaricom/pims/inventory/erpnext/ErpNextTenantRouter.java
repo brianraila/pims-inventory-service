@@ -6,8 +6,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.util.UriUtils;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
@@ -44,7 +46,7 @@ public class ErpNextTenantRouter {
         return client.get(
                 resolveBaseUrl(tenantId),
                 resolveHeaders(tenantId),
-                resourcePath(doctype) + "/" + name,
+                documentPath(doctype, name),
                 new LinkedMultiValueMap<>(),
                 type);
     }
@@ -53,7 +55,7 @@ public class ErpNextTenantRouter {
         return client.get(
                 resolveBaseUrl(tenantId),
                 resolveHeaders(tenantId),
-                resourcePath(doctype) + "/" + name,
+                documentPath(doctype, name),
                 new LinkedMultiValueMap<>(),
                 type);
     }
@@ -71,13 +73,11 @@ public class ErpNextTenantRouter {
     // ---- PUT (update entire document) --------------------------------------
 
     public <T> Mono<T> replace(String tenantId, String doctype, String name, Object body, Class<T> type) {
-        String path = resourcePath(doctype) + "/" + name;
-        return client.put(resolveBaseUrl(tenantId), resolveHeaders(tenantId), path, body, type);
+        return client.put(resolveBaseUrl(tenantId), resolveHeaders(tenantId), documentPath(doctype, name), body, type);
     }
 
     public <T> Mono<T> replace(String tenantId, String doctype, String name, Object body, ParameterizedTypeReference<T> type) {
-        String path = resourcePath(doctype) + "/" + name;
-        return client.put(resolveBaseUrl(tenantId), resolveHeaders(tenantId), path, body, type);
+        return client.put(resolveBaseUrl(tenantId), resolveHeaders(tenantId), documentPath(doctype, name), body, type);
     }
 
     // ---- Frappe method call -------------------------------------------------
@@ -90,8 +90,7 @@ public class ErpNextTenantRouter {
     // ---- DELETE -------------------------------------------------------------
 
     public Mono<Void> delete(String tenantId, String doctype, String name) {
-        String path = resourcePath(doctype) + "/" + name;
-        return client.delete(resolveBaseUrl(tenantId), resolveHeaders(tenantId), path);
+        return client.delete(resolveBaseUrl(tenantId), resolveHeaders(tenantId), documentPath(doctype, name));
     }
 
     // ---- helpers ------------------------------------------------------------
@@ -118,7 +117,15 @@ public class ErpNextTenantRouter {
     }
 
     private String resourcePath(String doctype) {
-        return RESOURCE_API + "/" + doctype;
+        return RESOURCE_API + "/" + encodePathSegment(doctype);
+    }
+
+    private String documentPath(String doctype, String name) {
+        return resourcePath(doctype) + "/" + encodePathSegment(name);
+    }
+
+    private static String encodePathSegment(String segment) {
+        return UriUtils.encodePathSegment(segment, StandardCharsets.UTF_8);
     }
 
     private MultiValueMap<String, String> toMultiValue(Map<String, String> queryParams) {

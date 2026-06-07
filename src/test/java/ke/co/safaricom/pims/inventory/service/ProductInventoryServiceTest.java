@@ -1,5 +1,6 @@
 package ke.co.safaricom.pims.inventory.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import ke.co.safaricom.pims.inventory.api.dto.BatchResponse;
 import ke.co.safaricom.pims.inventory.api.dto.CreateStockAdjustmentRequest;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
@@ -30,6 +31,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -47,6 +49,7 @@ class ProductInventoryServiceTest {
     private static final String TENANT = "test-tenant";
     private static final String ITEM_CODE = "PIMS-ITEM-001";
     private static final String WAREHOUSE = "Main Warehouse";
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Mock
     private ErpNextTenantRouter router;
@@ -98,24 +101,13 @@ class ProductInventoryServiceTest {
     }
 
     private ErpNextDoc itemDoc(String name) {
-        // 51 fields: name,owner,creation,modified,docstatus(5), itemName,itemGroup,stockUom,description,disabled,isStockItem,reorderLevels(7),
-        // customPims* x11 String(13-23), Double x2(24-25), Integer+String+Integer+Integer+Integer+String(26-31), itemCode(32),
-        // warehouse,actualQty,reservedQty(33-35), batchId,expiryDate,mfgDate,supplier(36-39),
-        // stockEntryType,purpose,postingDate,remarks,fromWarehouse,toWarehouse,items(40-46), status,txDate,schedDate,grandTotal,itemsCount(47-51)
-        return new ErpNextDoc(name, null, null, null, null,
-                "Amoxicillin 500mg", "Antibiotics", "Nos", null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null,
-                null,              // priceListRate (Item Price)
-                name,
-                null, null, null,
-                null,              // item (Batch parent link)
-                null, null, null, null,
-                null, null, null, null, null, null, null, null,  // batchQty, customPimsUnitCost, customPimsTradeCost, supplierName, warehouseName, itemGroupName, parentItemGroup, isGroup
-                null, null, null, null, null, null, null,
-                null, null, null, null, null,
-                null, null, null, null,   // customer, currency, netTotal, totalTaxesAndCharges
-                null, null, null, null, null, null, null);  // isPos, paidAmount, outstandingAmount, modeOfPayment, referenceNo, referenceDate, party
+        Map<String, Object> fields = new HashMap<>();
+        fields.put("name", name);
+        fields.put("item_name", "Amoxicillin 500mg");
+        fields.put("item_group", "Antibiotics");
+        fields.put("stock_uom", "Nos");
+        fields.put("item_code", name);
+        return MAPPER.convertValue(fields, ErpNextDoc.class);
     }
 
     private void stubListItemsAndBatches(String itemCode, double qty) {
