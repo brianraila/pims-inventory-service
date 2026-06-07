@@ -544,7 +544,8 @@ public class ProductInventoryService {
                         return Mono.error(new ResourceNotFoundException(
                                 ErrorCode.BATCH_NOT_FOUND,
                                 "Batch not found: " + batchId + " for product " + productId));
-                    return router.delete(tenantId, "Batch", match.get().id());
+                    return reverseStockForBatch(tenantId, itemCode, match.get())
+                            .then(router.delete(tenantId, "Batch", match.get().id()));
                 }));
     }
 
@@ -715,9 +716,6 @@ public class ProductInventoryService {
         if (b.unitCost() != null) batchBody.put("pims_unit_cost", b.unitCost());
         if (b.tradeCost() != null) batchBody.put("pims_trade_cost", b.tradeCost());
         Mono<Void> createBatch = router.create(tenantId, "Batch", batchBody, SINGLE_TYPE).then();
-        if (b.quantity() == null || b.quantity() <= 0) {
-            return createBatch;
-        }
         return createBatch.then(createInitialStockEntry(tenantId, itemCode, b));
     }
 
@@ -738,6 +736,31 @@ public class ProductInventoryService {
         entry.put("items", List.of(lineItem));
         // ERPNext only books quantity into Bin.actual_qty once the Stock Entry is *submitted* —
         // a draft has no stock effect, so the create must be chained into an immediate submit.
+        return router.create(tenantId, "Stock Entry", entry, SINGLE_TYPE)
+                .map(ErpNextSingleResponse::data)
+                .map(ErpNextDoc::name)
+                .flatMap(name -> submitStockEntry(tenantId, name))
+                .then();
+    }
+
+    private Mono<Void> reverseStockForBatch(String tenantId, String itemCode, BatchResponse batch) {
+        double qty = batch.quantity();
+        if (qty <= 0) {
+            return Mono.empty();
+        }
+        String warehouse = StringUtils.hasText(batch.location())
+                ? batch.location() : inventoryService.defaultWarehouse();
+        Map<String, Object> lineItem = new HashMap<>();
+        lineItem.put("item_code", itemCode);
+        lineItem.put("qty", qty);
+        lineItem.put("s_warehouse", warehouse);
+        lineItem.put("batch_no", batch.batchNumber());
+        Map<String, Object> entry = new HashMap<>();
+        entry.put("doctype", "Stock Entry");
+        entry.put("stock_entry_type", "Material Issue");
+        entry.put("purpose", "Material Issue");
+        entry.put("remarks", "Batch deletion stock reversal");
+        entry.put("items", List.of(lineItem));
         return router.create(tenantId, "Stock Entry", entry, SINGLE_TYPE)
                 .map(ErpNextSingleResponse::data)
                 .map(ErpNextDoc::name)
@@ -1278,8 +1301,8 @@ public class ProductInventoryService {
         if (!StringUtils.hasText(b.expiryDate())) {
             missing.add("expiry_date");
         }
-        if (b.quantity() == null) {
-            missing.add("quantity");
+        if (b.quantity() == null || b.quantity() <= 0) {
+            missing.add("quantity (must be > 0)");
         }
         if (b.unitCost() == null) {
             missing.add("unit_cost");

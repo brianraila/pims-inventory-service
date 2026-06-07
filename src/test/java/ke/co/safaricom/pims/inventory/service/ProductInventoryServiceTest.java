@@ -18,13 +18,14 @@ import ke.co.safaricom.pims.inventory.web.service.ProductDraftMemoryStore;
 import ke.co.safaricom.pims.inventory.web.service.ProductInventoryService;
 import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -33,12 +34,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static ke.co.safaricom.pims.inventory.service.StockEntryTestStubs.SINGLE_TYPE;
+import static ke.co.safaricom.pims.inventory.service.StockEntryTestStubs.stubMaterialIssueReversal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-@Disabled
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class ProductInventoryServiceTest {
 
     private static final String TENANT = "test-tenant";
@@ -69,6 +72,7 @@ class ProductInventoryServiceTest {
                         any(org.springframework.core.ParameterizedTypeReference.class));
         lenient().when(inventoryService.getSellingPrices(anyString(), anyList()))
                 .thenReturn(Mono.just(Map.of()));
+        StockEntryTestStubs.lenientBatchStockFlow(router, TENANT);
     }
 
     // ---- helpers ----------------------------------------------------------------
@@ -356,7 +360,7 @@ class ProductInventoryServiceTest {
                     if (code == null) return Mono.just(List.of());
                     return Mono.just(List.of(item(code)));
                 });
-        when(router.create(eq(TENANT), eq("Item"), anyMap(), any(Class.class)))
+        when(router.create(eq(TENANT), eq("Item"), anyMap(), eq(SINGLE_TYPE)))
                 .thenAnswer(inv -> {
                     Map<String, Object> body = inv.getArgument(2);
                     String code = (String) body.get("item_code");
@@ -512,17 +516,23 @@ class ProductInventoryServiceTest {
     // ---- deleteProduct ----------------------------------------------------------
 
     @Test
-    void deleteProduct_calls_router_delete() {
+    void deleteProduct_soft_deletes_item_via_replace() {
         InventoryItemResponse itemResp = item(ITEM_CODE);
         when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
-        when(router.delete(eq(TENANT), eq("Item"), eq(ITEM_CODE))).thenReturn(Mono.empty());
+        when(router.getOne(eq(TENANT), eq("Item"), eq(ITEM_CODE), eq(SINGLE_TYPE)))
+                .thenReturn(Mono.just(singleResponse(itemDoc(ITEM_CODE))));
+        when(router.replace(eq(TENANT), eq("Item"), eq(ITEM_CODE), anyMap(), eq(SINGLE_TYPE)))
+                .thenReturn(Mono.just(singleResponse(itemDoc(ITEM_CODE))));
 
         UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
 
         StepVerifier.create(service.deleteProduct(TENANT, productId))
                 .verifyComplete();
 
-        verify(router).delete(TENANT, "Item", ITEM_CODE);
+        verify(router).replace(eq(TENANT), eq("Item"), eq(ITEM_CODE),
+                argThat(body -> body instanceof Map<?, ?> map
+                        && Integer.valueOf(1).equals(map.get("disabled"))),
+                eq(SINGLE_TYPE));
     }
 
     @Test
@@ -635,11 +645,12 @@ class ProductInventoryServiceTest {
     }
 
     @Test
-    void deleteBatch_calls_router_delete_on_erp_batch_name() {
+    void deleteBatch_submits_material_issue_then_deletes_batch() {
         InventoryItemResponse itemResp = item(ITEM_CODE);
         BatchResponse b1 = batch("erp-batch-1", ITEM_CODE, 50.0, "2026-06-30");
         when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
         when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of(b1)));
+        stubMaterialIssueReversal(router, TENANT, "STE-REV-1", ITEM_CODE, 50.0);
         when(router.delete(eq(TENANT), eq("Batch"), eq("erp-batch-1"))).thenReturn(Mono.empty());
 
         UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
@@ -648,7 +659,26 @@ class ProductInventoryServiceTest {
         StepVerifier.create(service.deleteBatch(TENANT, productId, batchId))
                 .verifyComplete();
 
+        verify(router).create(eq(TENANT), eq("Stock Entry"), anyMap(), eq(SINGLE_TYPE));
         verify(router).delete(TENANT, "Batch", "erp-batch-1");
+    }
+
+    @Test
+    void deleteBatch_skips_stock_reversal_when_batch_quantity_is_zero() {
+        InventoryItemResponse itemResp = item(ITEM_CODE);
+        BatchResponse emptyBatch = batch("erp-batch-empty", ITEM_CODE, 0.0, "2026-06-30");
+        when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
+        when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of(emptyBatch)));
+        when(router.delete(eq(TENANT), eq("Batch"), eq("erp-batch-empty"))).thenReturn(Mono.empty());
+
+        UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
+        UUID batchId = StableEntityIds.batchId(TENANT, "erp-batch-empty");
+
+        StepVerifier.create(service.deleteBatch(TENANT, productId, batchId))
+                .verifyComplete();
+
+        verify(router, never()).create(eq(TENANT), eq("Stock Entry"), anyMap(), eq(SINGLE_TYPE));
+        verify(router).delete(TENANT, "Batch", "erp-batch-empty");
     }
 
     // ---- addBatchJsonReturn -----------------------------------------------------
@@ -661,7 +691,7 @@ class ProductInventoryServiceTest {
                 "erp-b99", "BATCH-99", ITEM_CODE, 100.0, "available",
                 "2027-01-01", null, "Main Warehouse", null, "2024-01-01", 10.0, 0.0, "Supplier A", null);
         when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
-        when(router.create(eq(TENANT), eq("Batch"), anyMap(), any(Class.class)))
+        when(router.create(eq(TENANT), eq("Batch"), anyMap(), eq(SINGLE_TYPE)))
                 .thenReturn(Mono.just(singleResponse(itemDoc("erp-b99"))));
         when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of(createdBatch)));
 
@@ -672,6 +702,31 @@ class ProductInventoryServiceTest {
         StepVerifier.create(service.addBatchJsonReturn(TENANT, productId, req))
                 .assertNext(b -> assertThat(b.batchNumber()).isEqualTo("BATCH-99"))
                 .verifyComplete();
+    }
+
+    @Test
+    void addBatchJsonReturn_rejects_zero_quantity() {
+        UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
+        InventoryApiSchemas.CreateBatchRequest req = new InventoryApiSchemas.CreateBatchRequest(
+                "BATCH-99", "2027-01-01", "Supplier A", 0.0, null, 10.0, WAREHOUSE, null, null);
+
+        StepVerifier.create(Mono.defer(() -> service.addBatchJsonReturn(TENANT, productId, req)))
+                .expectErrorSatisfies(err -> {
+                    assertThat(err).isInstanceOf(ServiceValidationException.class);
+                    assertThat(err.getMessage()).contains("quantity (must be > 0)");
+                })
+                .verify();
+    }
+
+    @Test
+    void addBatchJsonReturn_rejects_negative_quantity() {
+        UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
+        InventoryApiSchemas.CreateBatchRequest req = new InventoryApiSchemas.CreateBatchRequest(
+                "BATCH-99", "2027-01-01", "Supplier A", -5.0, null, 10.0, WAREHOUSE, null, null);
+
+        StepVerifier.create(Mono.defer(() -> service.addBatchJsonReturn(TENANT, productId, req)))
+                .expectError(ServiceValidationException.class)
+                .verify();
     }
 
     @Test
@@ -719,7 +774,7 @@ class ProductInventoryServiceTest {
         BatchResponse createdBatch = new BatchResponse(
                 "erp-csv-1", "BATCH-csv-1", ITEM_CODE, 50.0, "available",
                 "2027-06-01", null, "Main Warehouse", null, "2024-01-01", 12.5, 0.0, null, null);
-        when(router.create(eq(TENANT), eq("Batch"), anyMap(), any(Class.class)))
+        when(router.create(eq(TENANT), eq("Batch"), anyMap(), eq(SINGLE_TYPE)))
                 .thenReturn(Mono.just(singleResponse(itemDoc(ITEM_CODE))));
         when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of(createdBatch)));
 
