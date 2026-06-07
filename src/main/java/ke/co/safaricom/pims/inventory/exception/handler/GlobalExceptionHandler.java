@@ -1,8 +1,11 @@
 package ke.co.safaricom.pims.inventory.exception.handler;
 
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
+import ke.co.safaricom.pims.inventory.exception.ErrorCode;
+import ke.co.safaricom.pims.inventory.exception.ErrorResponse;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
 import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
+import ke.co.safaricom.pims.inventory.exception.UpstreamServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -11,10 +14,12 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.support.WebExchangeBindException;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.ServerWebInputException;
 
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -24,72 +29,124 @@ public class GlobalExceptionHandler {
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(WebExchangeBindException.class)
-    public ResponseEntity<Map<String, Object>> handleValidation(WebExchangeBindException ex) {
-        List<Map<String, String>> errors = new ArrayList<>();
-        ex.getBindingResult().getFieldErrors().forEach(fe -> errors.add(
-                Map.of("field", fe.getField(), "message", fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "")));
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("code", "VALIDATION_ERROR");
-        body.put(
-                "message",
-                errors.isEmpty() ? "Validation failed" : errors.get(0).get("message"));
-        body.put("errors", errors);
-        body.put("details", Map.of());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    public ResponseEntity<ErrorResponse> handleValidation(WebExchangeBindException ex, ServerWebExchange exchange) {
+        List<ErrorResponse.FieldError> errors = new ArrayList<>();
+        ex.getBindingResult().getFieldErrors().forEach(fe -> errors.add(new ErrorResponse.FieldError(
+                fe.getField(), fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "")));
+        String message = errors.isEmpty() ? "Validation failed" : errors.get(0).message();
+        logClientError(exchange, ex, message);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.validation(ErrorCode.VALIDATION_ERROR, message, errors));
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
-        return specError(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), null);
+    public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex, ServerWebExchange exchange) {
+        logClientError(exchange, ex, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of(ex.getErrorCode(), ex.getMessage()));
     }
 
     @ExceptionHandler(ConflictException.class)
-    public ResponseEntity<Map<String, Object>> handleConflict(ConflictException ex) {
-        return specError(HttpStatus.CONFLICT, "CONFLICT", ex.getMessage(), null);
+    public ResponseEntity<ErrorResponse> handleConflict(ConflictException ex, ServerWebExchange exchange) {
+        logClientError(exchange, ex, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of(ex.getErrorCode(), ex.getMessage()));
     }
 
     @ExceptionHandler(ServiceValidationException.class)
-    public ResponseEntity<Map<String, Object>> handleServiceValidation(ServiceValidationException ex) {
-        return specError(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), null);
+    public ResponseEntity<ErrorResponse> handleServiceValidation(
+            ServiceValidationException ex, ServerWebExchange exchange) {
+        logClientError(exchange, ex, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(ex.getErrorCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(UpstreamServiceException.class)
+    public ResponseEntity<ErrorResponse> handleUpstream(UpstreamServiceException ex, ServerWebExchange exchange) {
+        logger.error(
+                "Upstream error on {} {}: {} ({})",
+                exchange.getRequest().getMethod(),
+                exchange.getRequest().getPath(),
+                ex.getMessage(),
+                ex.getErrorCode());
+        HttpStatus status = ex.getErrorCode() == ErrorCode.SERVICE_UNAVAILABLE
+                ? HttpStatus.SERVICE_UNAVAILABLE
+                : HttpStatus.BAD_GATEWAY;
+        return ResponseEntity.status(status).body(ErrorResponse.of(ex.getErrorCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(WebClientRequestException.class)
+    public ResponseEntity<ErrorResponse> handleWebClientRequest(
+            WebClientRequestException ex, ServerWebExchange exchange) {
+        logger.error(
+                "Unable to reach ERPNext on {} {}: {}",
+                exchange.getRequest().getMethod(),
+                exchange.getRequest().getPath(),
+                ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.of(
+                        ErrorCode.SERVICE_UNAVAILABLE, "Unable to reach ERPNext. Please try again later."));
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
-        return specError(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have permission.", null);
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex, ServerWebExchange exchange) {
+        logger.warn(
+                "Access denied on {} {}: {}",
+                exchange.getRequest().getMethod(),
+                exchange.getRequest().getPath(),
+                ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of(ErrorCode.FORBIDDEN, "You do not have permission."));
     }
 
     @ExceptionHandler(ServerWebInputException.class)
-    public ResponseEntity<Map<String, Object>> handleBadInput(ServerWebInputException ex) {
+    public ResponseEntity<ErrorResponse> handleBadInput(ServerWebInputException ex, ServerWebExchange exchange) {
         String msg = "Invalid request body or parameter.";
         if (ex.getCause() instanceof com.fasterxml.jackson.databind.exc.InvalidFormatException ife
                 && !ife.getPath().isEmpty()) {
             String field = ife.getPath().get(ife.getPath().size() - 1).getFieldName();
             msg = "Invalid value '" + ife.getValue() + "' for field '" + field + "'.";
         }
-        return specError(HttpStatus.BAD_REQUEST, "BAD_REQUEST", msg, null);
+        logClientError(exchange, ex, msg);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ErrorResponse.of(ErrorCode.BAD_REQUEST, msg));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
-        return specError(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), null);
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex, ServerWebExchange exchange) {
+        logClientError(exchange, ex, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ErrorResponse.of(ErrorCode.BAD_REQUEST, ex.getMessage()));
+    }
+
+    @ExceptionHandler(UncheckedIOException.class)
+    public ResponseEntity<ErrorResponse> handleUncheckedIO(UncheckedIOException ex, ServerWebExchange exchange) {
+        logger.error(
+                "IO error on {} {}: {}",
+                exchange.getRequest().getMethod(),
+                exchange.getRequest().getPath(),
+                ex.getMessage(),
+                ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of(ErrorCode.INTERNAL_ERROR, ex.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
-        logger.error("Unhandled exception", ex);
-        return specError(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                "An unexpected error occurred.",
-                Map.of());
+    public ResponseEntity<ErrorResponse> handleGeneric(Exception ex, ServerWebExchange exchange) {
+        logger.error(
+                "Unhandled exception on {} {}",
+                exchange.getRequest().getMethod(),
+                exchange.getRequest().getPath(),
+                ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.withDetails(
+                        ErrorCode.INTERNAL_ERROR, "An unexpected error occurred.", Map.of()));
     }
 
-    private static ResponseEntity<Map<String, Object>> specError(
-            HttpStatus status, String code, String message, Map<String, Object> details) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("code", code);
-        body.put("message", message);
-        body.put("details", details);
-        return ResponseEntity.status(status).body(body);
+    private static void logClientError(ServerWebExchange exchange, Throwable ex, String message) {
+        logger.warn(
+                "Client error on {} {}: {} ({})",
+                exchange.getRequest().getMethod(),
+                exchange.getRequest().getPath(),
+                message,
+                ex.getClass().getSimpleName());
     }
 }

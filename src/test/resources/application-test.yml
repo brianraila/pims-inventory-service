@@ -1,4 +1,12 @@
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+  kafka:
+    listener:
+      auto-startup: false
+  main:
+    lazy-initialization: true
   cloud:
     consul:
       enabled: false
@@ -14,5 +22,12 @@ spring:
 
 erpnext:
   domain: test.local
+  wrapper:
+    url: http://localhost:9999
+    tenant-id: test-tenant
   api-key: ${ERPNEXT_API_KEY:}
   api-secret: ${ERPNEXT_API_SECRET:}
+
+kafka:
+  topic:
+    payment-success: payment-success-test

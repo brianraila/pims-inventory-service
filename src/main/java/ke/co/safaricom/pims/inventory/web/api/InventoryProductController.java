@@ -64,7 +64,7 @@ public class InventoryProductController {
     public Mono<InventoryApiSchemas.ProductDetail> create(
             Authentication authentication,
             ServerWebExchange exchange,
-            @RequestBody InventoryApiSchemas.CreateProductRequest request) {
+            @Valid @RequestBody InventoryApiSchemas.CreateProductRequest request) {
         return tenants.resolveTenantId(authentication, exchange)
                 .flatMap(t -> productInventoryService.createProduct(t, request));
     }

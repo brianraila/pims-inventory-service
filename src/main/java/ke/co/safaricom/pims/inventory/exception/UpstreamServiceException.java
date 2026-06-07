@@ -1,14 +1,10 @@
 package ke.co.safaricom.pims.inventory.exception;
 
-public class ConflictException extends RuntimeException {
+public class UpstreamServiceException extends RuntimeException {
 
     private final ErrorCode errorCode;
 
-    public ConflictException(String message) {
-        this(ErrorCode.CONFLICT, message);
-    }
-
-    public ConflictException(ErrorCode errorCode, String message) {
+    public UpstreamServiceException(ErrorCode errorCode, String message) {
         super(message);
         this.errorCode = errorCode;
     }

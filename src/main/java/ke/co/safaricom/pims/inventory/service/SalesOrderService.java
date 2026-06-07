@@ -3,6 +3,7 @@ package ke.co.safaricom.pims.inventory.service;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.config.ErpNextProperties;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextDocUtils;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
@@ -141,6 +142,7 @@ public class SalesOrderService {
                 .then(router.getOne(tenantId, DOCTYPE, orderId, RAW_SINGLE_TYPE))
                 .map(ErpNextSingleResponse::data)
                 .flatMap(latest -> {
+                    ErpNextDocUtils.allowZeroValuationRateOnZeroCostItems(latest);
                     Map<String, Object> submitBody = new HashMap<>();
                     submitBody.put("doc", latest);
                     return router.callMethod(tenantId, "frappe.client.submit", submitBody, SUBMIT_TYPE)
@@ -213,6 +215,7 @@ public class SalesOrderService {
             line.put("rate",      oi.unitPrice());
             line.put(F_AMOUNT,    oi.quantity() * oi.unitPrice());
             line.put("warehouse", properties.defaultWarehouse());
+            line.put("allow_zero_valuation_rate", 1);
             result.add(line);
         }
         return result;
@@ -226,7 +229,7 @@ public class SalesOrderService {
         body.put(F_POSTING_DATE, LocalDate.now().toString());
         body.put(F_CURRENCY,     CURRENCY);
         body.put(F_UPDATE_STOCK, 1);
-        body.put(F_IS_POS,       1);
+        body.put(F_IS_POS,       0);
         body.put("docstatus",    docstatus);
         body.put(F_ITEMS,        items);
         if (StringUtils.hasText(prescriptionId)) {
@@ -244,7 +247,7 @@ public class SalesOrderService {
         body.put(F_POSTING_DATE, doc.postingDate() != null ? doc.postingDate() : LocalDate.now().toString());
         body.put(F_CURRENCY,     CURRENCY);
         body.put(F_UPDATE_STOCK, 1);
-        body.put(F_IS_POS,       1);
+        body.put(F_IS_POS,       0);
         if (items != null) body.put(F_ITEMS, items);
         return body;
     }

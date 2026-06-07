@@ -46,6 +46,7 @@ public class ProductDraftMemoryStore {
                 null,
                 null,
                 null,
+                null,
                 java.util.Collections.emptyList());
     }
 
@@ -82,6 +83,7 @@ public class ProductDraftMemoryStore {
                 coalesce(incoming.unitOfMeasure(), base.unitOfMeasure()),
                 coalesce(incoming.reorderLevel(), base.reorderLevel()),
                 coalesce(incoming.maximumStock(), base.maximumStock()),
+                coalesce(incoming.sellingPrice(), base.sellingPrice()),
                 coalesce(incoming.specialRequirements(), base.specialRequirements()),
                 (incoming.initialBatches() != null && !incoming.initialBatches().isEmpty())
                         ? incoming.initialBatches()

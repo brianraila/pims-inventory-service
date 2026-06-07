@@ -1,24 +1,13 @@
 package ke.co.safaricom.pims.inventory.web.api;
 
-import ke.co.safaricom.pims.inventory.config.TestSecurityConfig;
+import ke.co.safaricom.pims.inventory.config.AbstractInventoryControllerTest;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
-import ke.co.safaricom.pims.inventory.exception.handler.GlobalExceptionHandler;
-import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
 import ke.co.safaricom.pims.inventory.web.model.Enums;
 import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
-import ke.co.safaricom.pims.inventory.web.service.ProductInventoryService;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
-import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import reactor.core.publisher.Mono;
 
@@ -28,27 +17,11 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 
-@WebFluxTest(controllers = InventoryBatchController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
-class InventoryBatchControllerTest {
+class InventoryBatchControllerTest extends AbstractInventoryControllerTest {
 
     private static final UUID PRODUCT_ID = UUID.randomUUID();
     private static final UUID BATCH_ID = UUID.randomUUID();
     private static final String BASE = "/api/v1/inventory/products/" + PRODUCT_ID + "/batches";
-
-    @Autowired
-    private WebTestClient client;
-
-    @MockBean
-    private ProductInventoryService service;
-
-    @MockBean
-    private TenantContextResolver tenants;
-
-    @BeforeEach
-    void setUp() {
-        when(tenants.resolveTenantId(any(), any())).thenReturn(Mono.just("t1"));
-    }
 
     // ---- GET /products/{id}/batches --------------------------------------------
 
@@ -57,7 +30,7 @@ class InventoryBatchControllerTest {
         InventoryApiSchemas.BatchListResponse response =
                 new InventoryApiSchemas.BatchListResponse(List.of(),
                         new InventoryApiSchemas.Pagination(1, 10, 0, 0));
-        when(service.listBatches(eq("t1"), eq(PRODUCT_ID), anyInt(), anyInt(), any(), any()))
+        when(productInventoryService.listBatches(eq("t1"), eq(PRODUCT_ID), anyInt(), anyInt(), any(), any()))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(BASE)
@@ -74,7 +47,7 @@ class InventoryBatchControllerTest {
         InventoryApiSchemas.BatchListResponse response =
                 new InventoryApiSchemas.BatchListResponse(List.of(),
                         new InventoryApiSchemas.Pagination(1, 10, 0, 0));
-        when(service.listBatches(eq("t1"), eq(PRODUCT_ID), eq(1), eq(10),
+        when(productInventoryService.listBatches(eq("t1"), eq(PRODUCT_ID), eq(1), eq(10),
                 eq(Enums.BatchStatus.available), eq("lifo")))
                 .thenReturn(Mono.just(response));
 
@@ -92,7 +65,7 @@ class InventoryBatchControllerTest {
     @Test
     void createBatch_json_returns_201_with_batch() {
         InventoryApiSchemas.Batch batch = batch();
-        when(service.addBatchJsonReturn(eq("t1"), eq(PRODUCT_ID), any()))
+        when(productInventoryService.addBatchJsonReturn(eq("t1"), eq(PRODUCT_ID), any()))
                 .thenReturn(Mono.just(batch));
 
         client.post().uri(BASE)
@@ -111,7 +84,7 @@ class InventoryBatchControllerTest {
     void createBatch_csv_multipart_returns_201_with_bulk_result() {
         InventoryApiSchemas.BatchBulkUploadResult result =
                 new InventoryApiSchemas.BatchBulkUploadResult(2, 2, 0, List.of(), List.of());
-        when(service.createBatchFlexible(eq("t1"), eq(PRODUCT_ID), isNull(), any()))
+        when(productInventoryService.createBatchFlexible(eq("t1"), eq(PRODUCT_ID), isNull(), any()))
                 .thenReturn(Mono.just(result));
 
         String csvContent = "batch_number,expiry_date,quantity,unit_cost,storage_location\n" +
@@ -142,7 +115,7 @@ class InventoryBatchControllerTest {
     @Test
     void getBatch_returns_200_with_batch() {
         InventoryApiSchemas.Batch batch = batch();
-        when(service.getBatch(eq("t1"), eq(PRODUCT_ID), eq(BATCH_ID)))
+        when(productInventoryService.getBatch(eq("t1"), eq(PRODUCT_ID), eq(BATCH_ID)))
                 .thenReturn(Mono.just(batch));
 
         client.get().uri(BASE + "/" + BATCH_ID)
@@ -155,7 +128,7 @@ class InventoryBatchControllerTest {
 
     @Test
     void getBatch_returns_404_when_batch_not_found() {
-        when(service.getBatch(eq("t1"), eq(PRODUCT_ID), any()))
+        when(productInventoryService.getBatch(eq("t1"), eq(PRODUCT_ID), any()))
                 .thenReturn(Mono.error(new ResourceNotFoundException("Batch not found")));
 
         client.get().uri(BASE + "/" + UUID.randomUUID())
@@ -170,7 +143,7 @@ class InventoryBatchControllerTest {
 
     @Test
     void deleteBatch_returns_204_no_content() {
-        when(service.deleteBatch(eq("t1"), eq(PRODUCT_ID), eq(BATCH_ID)))
+        when(productInventoryService.deleteBatch(eq("t1"), eq(PRODUCT_ID), eq(BATCH_ID)))
                 .thenReturn(Mono.empty());
 
         client.delete().uri(BASE + "/" + BATCH_ID)
@@ -181,7 +154,7 @@ class InventoryBatchControllerTest {
 
     @Test
     void deleteBatch_returns_404_when_batch_not_found() {
-        when(service.deleteBatch(eq("t1"), eq(PRODUCT_ID), any()))
+        when(productInventoryService.deleteBatch(eq("t1"), eq(PRODUCT_ID), any()))
                 .thenReturn(Mono.error(new ResourceNotFoundException("Batch not found")));
 
         client.delete().uri(BASE + "/" + UUID.randomUUID())

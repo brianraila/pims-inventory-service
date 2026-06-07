@@ -5,6 +5,7 @@ import ke.co.safaricom.pims.inventory.api.dto.CreateStockAdjustmentRequest;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.api.dto.StockAdjustmentResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextDocUtils;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
@@ -13,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
+import ke.co.safaricom.pims.inventory.exception.ErrorCode;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
 import ke.co.safaricom.pims.inventory.mapper.InventoryMapper;
 import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
@@ -387,7 +389,8 @@ public class ProductInventoryService {
 
     public Mono<InventoryApiSchemas.ProductDraft> getDraft(String tenantId, UUID draftId) {
         return Mono.justOrEmpty(drafts.get(tenantId, draftId)).switchIfEmpty(
-                Mono.error(new ResourceNotFoundException("Draft not found")));
+                Mono.error(new ResourceNotFoundException(
+                        ErrorCode.DRAFT_NOT_FOUND, "Draft not found: " + draftId)));
     }
 
     public Mono<InventoryApiSchemas.ProductDraft> patchDraft(String tenantId, UUID draftId, InventoryApiSchemas.ProductDraftRequest req) {
@@ -400,7 +403,8 @@ public class ProductInventoryService {
                 .flatMap(tuple -> {
                     InventoryItemResponse item =
                             tuple.getT1().stream().filter(it -> StableEntityIds.itemId(tenantId, it.id()).equals(productId)).findFirst()
-                                    .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+                                    .orElseThrow(() -> new ResourceNotFoundException(
+                                            ErrorCode.PRODUCT_NOT_FOUND, "Product not found: " + productId));
                     Map<String, List<BatchResponse>> grouped =
                             tuple.getT2().stream().collect(Collectors.groupingBy(BatchResponse::productId));
                     List<BatchResponse> batches = new ArrayList<>(
@@ -442,6 +446,7 @@ public class ProductInventoryService {
             return router
                     .create(tenantId, "Item", body, SINGLE_TYPE)
                     .flatMap(created -> chainInitialBatches(tenantId, itemCode, req))
+                    .then(upsertSellingPrice(tenantId, itemCode, req.sellingPrice()))
                     .then(getProduct(tenantId, StableEntityIds.itemId(tenantId, itemCode)));
         }));
     }
@@ -467,7 +472,8 @@ public class ProductInventoryService {
                             String desc = ItemExtrasCodec.mergeUpdate(
                                     Optional.ofNullable(doc.description()).orElse(""), u);
                             body.put("description", desc);
-                            return router.replace(tenantId, "Item", doc.name(), body, SINGLE_TYPE);
+                            return router.replace(tenantId, "Item", doc.name(), body, SINGLE_TYPE)
+                                    .then(upsertSellingPrice(tenantId, doc.name(), u.sellingPrice()));
                         })
                         .then(getProduct(tenantId, productId))));
     }
@@ -520,7 +526,9 @@ public class ProductInventoryService {
                                     .findFirst()
                                     .map(b -> toApiBatch(tenantId, itemCode, b));
                             return found.map(Mono::just).orElseGet(() ->
-                                    Mono.error(new ResourceNotFoundException("Batch not found")));
+                                    Mono.error(new ResourceNotFoundException(
+                                            ErrorCode.BATCH_NOT_FOUND,
+                                            "Batch not found: " + batchId + " for product " + productId)));
                         }));
     }
 
@@ -533,7 +541,9 @@ public class ProductInventoryService {
                             .filter(b -> StableEntityIds.batchId(tenantId, b.id()).equals(batchId))
                             .findFirst();
                     if (match.isEmpty())
-                        return Mono.error(new ResourceNotFoundException("Batch not found"));
+                        return Mono.error(new ResourceNotFoundException(
+                                ErrorCode.BATCH_NOT_FOUND,
+                                "Batch not found: " + batchId + " for product " + productId));
                     return router.delete(tenantId, "Batch", match.get().id());
                 }));
     }
@@ -644,7 +654,8 @@ public class ProductInventoryService {
 
     public Mono<InventoryApiSchemas.TerminologyProduct> terminologyProduct(String terminologyId) {
         return Mono.justOrEmpty(TerminologyStub.product(terminologyId))
-                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Terminology product not found")));
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException(
+                        ErrorCode.TERMINOLOGY_NOT_FOUND, "Terminology product not found: " + terminologyId)));
     }
 
     // -------------------------------------------------------------------------
@@ -653,6 +664,30 @@ public class ProductInventoryService {
         validateBatch(req);
         return resolveItemName(tenantId, productId).flatMap(itemCode -> addBatchRaw(tenantId, itemCode, req)
                 .then(lastCreatedBatchForItem(tenantId, itemCode, req.batchNumber())));
+    }
+
+    private Mono<Void> upsertSellingPrice(String tenantId, String itemCode, Double sellingPrice) {
+        if (sellingPrice == null) return Mono.empty();
+        Map<String, String> params = new HashMap<>();
+        params.put("fields", "[\"name\",\"price_list_rate\"]");
+        params.put("filters", "[[\"item_code\",\"=\",\"" + itemCode + "\"],[\"price_list\",\"=\",\"Standard Selling\"],[\"selling\",\"=\",1]]");
+        return router.getList(tenantId, "Item Price", params, LIST_MAP_TYPE)
+                .flatMap(response -> {
+                    Map<String, Object> priceBody = new HashMap<>();
+                    priceBody.put("doctype", "Item Price");
+                    priceBody.put("item_code", itemCode);
+                    priceBody.put("price_list", "Standard Selling");
+                    priceBody.put("price_list_rate", sellingPrice);
+                    priceBody.put("selling", 1);
+                    priceBody.put("currency", "KES");
+                    List<Map<String, Object>> existing = response.data();
+                    if (!existing.isEmpty()) {
+                        String name = (String) existing.get(0).get("name");
+                        priceBody.put("name", name);
+                        return router.replace(tenantId, "Item Price", name, priceBody, SINGLE_TYPE).then();
+                    }
+                    return router.create(tenantId, "Item Price", priceBody, SINGLE_TYPE).then();
+                });
     }
 
     private Mono<Void> chainInitialBatches(String tenantId, String itemCode, InventoryApiSchemas.CreateProductRequest req) {
@@ -729,37 +764,12 @@ public class ProductInventoryService {
         return router.getOne(tenantId, "Stock Entry", name, RAW_SINGLE_TYPE)
                 .map(ErpNextSingleResponse::data)
                 .flatMap(latest -> {
-                    allowZeroValuationRateOnZeroCostItems(latest);
+                    ErpNextDocUtils.allowZeroValuationRateOnZeroCostItems(latest);
                     Map<String, Object> body = new HashMap<>();
                     body.put("doc", latest);
                     return router.callMethod(tenantId, "frappe.client.submit", body, SUBMIT_TYPE);
                 })
                 .map(ErpNextMessageResponse::message);
-    }
-
-    /**
-     * ERPNext blocks submission when a line item has basic_rate=0 unless
-     * allow_zero_valuation_rate is explicitly set. This is common for items
-     * that carry no purchase cost (e.g. test data or donated stock).
-     */
-    @SuppressWarnings("unchecked")
-    private static void allowZeroValuationRateOnZeroCostItems(Map<String, Object> doc) {
-        Object itemsObj = doc.get("items");
-        if (!(itemsObj instanceof List<?> rawList)) return;
-        for (Object raw : rawList) {
-            if (!(raw instanceof Map)) continue;
-            Map<String, Object> item = (Map<String, Object>) raw;
-            Object rate = item.get("basic_rate");
-            boolean isZeroCost;
-            if (rate instanceof Number n) {
-                isZeroCost = n.doubleValue() == 0.0;
-            } else {
-                isZeroCost = true;
-            }
-            if (isZeroCost) {
-                item.put("allow_zero_valuation_rate", 1);
-            }
-        }
     }
 
     private Mono<InventoryApiSchemas.Batch> lastCreatedBatchForItem(String tenantId, String itemCode, String batchNumberGuess) {
@@ -773,7 +783,13 @@ public class ProductInventoryService {
                             .findFirst()
                             .map(br -> toApiBatch(tenantId, itemCode, br));
                     return hit.map(Mono::just).orElseGet(() ->
-                            Mono.error(new ResourceNotFoundException("Batch not persisted")));
+                            Mono.error(new ResourceNotFoundException(
+                                    ErrorCode.BATCH_NOT_FOUND,
+                                    "Batch not persisted for item "
+                                            + itemCode
+                                            + " (batch_number="
+                                            + batchNumberGuess
+                                            + ")")));
                 });
     }
 
@@ -784,7 +800,8 @@ public class ProductInventoryService {
                         .filter(it -> StableEntityIds.itemId(tenantId, it.id()).equals(productId))
                         .map(InventoryItemResponse::id)
                         .findFirst()
-                        .orElseThrow(() -> new ResourceNotFoundException("Product not found")));
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                ErrorCode.PRODUCT_NOT_FOUND, "Product not found: " + productId)));
     }
 
     private Mono<List<String[]>> parseCsv(FilePart part) {
@@ -1250,13 +1267,30 @@ public class ProductInventoryService {
     }
 
     private static void validateBatch(InventoryApiSchemas.CreateBatchRequest b) {
-        if (b == null
-                || !StringUtils.hasText(b.batchNumber())
-                || !StringUtils.hasText(b.expiryDate())
-                || b.quantity() == null
-                || b.unitCost() == null
-                || !StringUtils.hasText(b.storageLocation())) {
-            throw new IllegalArgumentException("Invalid batch payload");
+        if (b == null) {
+            throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
+                    ErrorCode.VALIDATION_ERROR, "Batch payload is required");
+        }
+        List<String> missing = new ArrayList<>();
+        if (!StringUtils.hasText(b.batchNumber())) {
+            missing.add("batch_number");
+        }
+        if (!StringUtils.hasText(b.expiryDate())) {
+            missing.add("expiry_date");
+        }
+        if (b.quantity() == null) {
+            missing.add("quantity");
+        }
+        if (b.unitCost() == null) {
+            missing.add("unit_cost");
+        }
+        if (!StringUtils.hasText(b.storageLocation())) {
+            missing.add("storage_location");
+        }
+        if (!missing.isEmpty()) {
+            throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Missing or invalid batch fields: " + String.join(", ", missing));
         }
     }
 }

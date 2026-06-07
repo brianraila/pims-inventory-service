@@ -1,20 +1,11 @@
 package ke.co.safaricom.pims.inventory.web.api;
 
-import ke.co.safaricom.pims.inventory.config.TestSecurityConfig;
+import ke.co.safaricom.pims.inventory.config.AbstractInventoryControllerTest;
 import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
-import ke.co.safaricom.pims.inventory.exception.handler.GlobalExceptionHandler;
-import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
 import ke.co.safaricom.pims.inventory.web.model.Enums;
 import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
-import ke.co.safaricom.pims.inventory.web.service.ProductInventoryService;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -23,28 +14,12 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 
-@WebFluxTest(controllers = InventoryAdjustmentController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
-class InventoryAdjustmentControllerTest {
+class InventoryAdjustmentControllerTest extends AbstractInventoryControllerTest {
 
     private static final UUID PRODUCT_ID = UUID.randomUUID();
     private static final UUID BATCH_ID = UUID.randomUUID();
     private static final UUID ADJ_ID = UUID.randomUUID();
     private static final String BASE = "/api/v1/inventory/products/" + PRODUCT_ID + "/adjustments";
-
-    @Autowired
-    private WebTestClient client;
-
-    @MockBean
-    private ProductInventoryService service;
-
-    @MockBean
-    private TenantContextResolver tenants;
-
-    @BeforeEach
-    void setUp() {
-        when(tenants.resolveTenantId(any(), any())).thenReturn(Mono.just("t1"));
-    }
 
     // ---- GET /products/{id}/adjustments ----------------------------------------
 
@@ -53,7 +28,7 @@ class InventoryAdjustmentControllerTest {
         InventoryApiSchemas.AdjustmentListResponse response =
                 new InventoryApiSchemas.AdjustmentListResponse(List.of(),
                         new InventoryApiSchemas.Pagination(1, 10, 0, 0));
-        when(service.listAdjustments(eq("t1"), eq(PRODUCT_ID), anyInt(), anyInt()))
+        when(productInventoryService.listAdjustments(eq("t1"), eq(PRODUCT_ID), anyInt(), anyInt()))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(BASE)
@@ -70,7 +45,7 @@ class InventoryAdjustmentControllerTest {
         InventoryApiSchemas.AdjustmentListResponse response =
                 new InventoryApiSchemas.AdjustmentListResponse(List.of(),
                         new InventoryApiSchemas.Pagination(2, 5, 0, 0));
-        when(service.listAdjustments(eq("t1"), eq(PRODUCT_ID), eq(2), eq(5)))
+        when(productInventoryService.listAdjustments(eq("t1"), eq(PRODUCT_ID), eq(2), eq(5)))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(uriBuilder -> uriBuilder.path(BASE)
@@ -87,7 +62,7 @@ class InventoryAdjustmentControllerTest {
     @Test
     void createAdjustment_returns_201_with_stock_adjustment() {
         InventoryApiSchemas.StockAdjustment adjustment = stockAdjustment();
-        when(service.adjustStock(eq("t1"), eq(PRODUCT_ID), any(), anyString(), anyString()))
+        when(productInventoryService.adjustStock(eq("t1"), eq(PRODUCT_ID), any(), anyString(), anyString()))
                 .thenReturn(Mono.just(adjustment));
 
         client.post().uri(BASE)
@@ -103,7 +78,7 @@ class InventoryAdjustmentControllerTest {
 
     @Test
     void createAdjustment_returns_400_when_cannot_decrease_empty_batch() {
-        when(service.adjustStock(eq("t1"), eq(PRODUCT_ID), any(), anyString(), anyString()))
+        when(productInventoryService.adjustStock(eq("t1"), eq(PRODUCT_ID), any(), anyString(), anyString()))
                 .thenReturn(Mono.error(new ServiceValidationException("Cannot decrease empty batch")));
 
         client.post().uri(BASE)
@@ -119,7 +94,7 @@ class InventoryAdjustmentControllerTest {
     @Test
     void createAdjustment_extracts_anonymous_user_when_no_jwt() {
         InventoryApiSchemas.StockAdjustment adjustment = stockAdjustment();
-        when(service.adjustStock(eq("t1"), eq(PRODUCT_ID), any(), eq(""), eq("anonymous")))
+        when(productInventoryService.adjustStock(eq("t1"), eq(PRODUCT_ID), any(), eq(""), eq("anonymous")))
                 .thenReturn(Mono.just(adjustment));
 
         client.post().uri(BASE)

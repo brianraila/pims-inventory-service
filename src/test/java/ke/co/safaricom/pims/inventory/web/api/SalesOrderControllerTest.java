@@ -1,57 +1,24 @@
 package ke.co.safaricom.pims.inventory.web.api;
 
-import ke.co.safaricom.pims.inventory.config.TestSecurityConfig;
+import ke.co.safaricom.pims.inventory.config.AbstractInventoryControllerTest;
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
 import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
-import ke.co.safaricom.pims.inventory.exception.handler.GlobalExceptionHandler;
-import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
-import ke.co.safaricom.pims.inventory.service.OrderPaymentService;
 import ke.co.safaricom.pims.inventory.service.PaymentDetails;
-import ke.co.safaricom.pims.inventory.service.ReceiptService;
-import ke.co.safaricom.pims.inventory.service.SalesOrderService;
 import ke.co.safaricom.pims.inventory.web.model.SalesOrderSchemas;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers;
-import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 
-@WebFluxTest(controllers = SalesOrderController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
-class SalesOrderControllerTest {
+class SalesOrderControllerTest extends AbstractInventoryControllerTest {
 
     private static final String BASE = "/api/v1/inventory/orders";
     private static final String ORDER_ID = "SINV-2024-00001";
-
-    @Autowired
-    private WebTestClient client;
-
-    @MockBean
-    private SalesOrderService salesOrderService;
-
-    @MockBean
-    private OrderPaymentService orderPaymentService;
-
-    @MockBean
-    private ReceiptService receiptService;
-
-    @MockBean
-    private TenantContextResolver tenants;
-
-    @BeforeEach
-    void setUp() {
-        when(tenants.resolveTenantId(any(), any())).thenReturn(Mono.just("t1"));
-    }
 
     // ---- POST /{order_id}/pay --------------------------------------------------
 

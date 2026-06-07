@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 import java.util.Collections;
 import java.util.List;
@@ -147,10 +149,10 @@ public final class InventoryApiSchemas {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CreateProductRequest(
-            String productName,
-            String genericName,
+            @NotBlank(message = "product_name is required") String productName,
+            @NotBlank(message = "generic_name is required") String genericName,
             java.util.UUID manufacturerId,
-            String category,
+            @NotBlank(message = "category is required") String category,
             String ppbCode,
             String ndcCode,
             Enums.RegulatoryStatus regulatoryStatus,
@@ -159,9 +161,10 @@ public final class InventoryApiSchemas {
             String additionalNotes,
             String terminologySource,
             String terminologyId,
-            Enums.UnitOfMeasure unitOfMeasure,
-            Double reorderLevel,
-            Double maximumStock,
+            @NotNull(message = "unit_of_measure is required") Enums.UnitOfMeasure unitOfMeasure,
+            @NotNull(message = "reorder_level is required") Double reorderLevel,
+            @NotNull(message = "maximum_stock is required") Double maximumStock,
+            Double sellingPrice,
             SpecialRequirements specialRequirements,
             List<CreateBatchRequest> initialBatches) {}
 
@@ -181,28 +184,29 @@ public final class InventoryApiSchemas {
             Enums.UnitOfMeasure unitOfMeasure,
             Double reorderLevel,
             Double maximumStock,
+            Double sellingPrice,
             SpecialRequirements specialRequirements) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CreateBatchRequest(
-            String batchNumber,
-            String expiryDate,
+            @NotBlank(message = "batch_number is required") String batchNumber,
+            @NotBlank(message = "expiry_date is required") String expiryDate,
             String supplier,
-            Double quantity,
+            @NotNull(message = "quantity is required") @Positive(message = "quantity must be greater than 0") Double quantity,
             Double tradeCost,
-            Double unitCost,
-            String storageLocation,
+            @NotNull(message = "unit_cost is required") @Positive(message = "unit_cost must be greater than 0") Double unitCost,
+            @NotBlank(message = "storage_location is required") String storageLocation,
             String branch,
             String grnNumber) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record StockAdjustmentRequest(
-            java.util.UUID batchId,
-            Enums.AdjustmentDirection adjustmentType,
-            double quantity,
-            Enums.AdjustmentReason reason,
+            @NotNull(message = "batch_id is required") java.util.UUID batchId,
+            @NotNull(message = "adjustment_type is required") Enums.AdjustmentDirection adjustmentType,
+            @Positive(message = "quantity must be greater than 0") double quantity,
+            @NotNull(message = "reason is required") Enums.AdjustmentReason reason,
             String notes,
             String referenceNumber) {}
 
@@ -247,7 +251,7 @@ public final class InventoryApiSchemas {
         private static CreateProductRequest emptyDraftData() {
             return new CreateProductRequest(
                     null, null, null, null, null, null, null, null, null, null, null, null,
-                    null, null, null, null, Collections.emptyList());
+                    null, null, null, null, null, Collections.emptyList());
         }
     }
 
@@ -312,5 +316,6 @@ public final class InventoryApiSchemas {
             Boolean isGroup) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record UpdateCategoryRequest(String name, String parentCategory, Boolean isGroup) {}
+    public record UpdateCategoryRequest(
+            @NotBlank(message = "name cannot be blank") String name, String parentCategory, Boolean isGroup) {}
 }

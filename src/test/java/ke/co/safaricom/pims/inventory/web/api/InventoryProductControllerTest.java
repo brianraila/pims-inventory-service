@@ -1,22 +1,12 @@
 package ke.co.safaricom.pims.inventory.web.api;
 
-import ke.co.safaricom.pims.inventory.config.TestSecurityConfig;
+import ke.co.safaricom.pims.inventory.config.AbstractInventoryControllerTest;
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
-import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
-import ke.co.safaricom.pims.inventory.exception.handler.GlobalExceptionHandler;
-import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
 import ke.co.safaricom.pims.inventory.web.model.Enums;
 import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
-import ke.co.safaricom.pims.inventory.web.service.ProductInventoryService;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -25,27 +15,11 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 
-@WebFluxTest(controllers = InventoryProductController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
-class InventoryProductControllerTest {
+class InventoryProductControllerTest extends AbstractInventoryControllerTest {
 
     private static final String BASE = "/api/v1/inventory/products";
     private static final UUID PRODUCT_ID = UUID.randomUUID();
     private static final UUID DRAFT_ID = UUID.randomUUID();
-
-    @Autowired
-    private WebTestClient client;
-
-    @MockBean
-    private ProductInventoryService service;
-
-    @MockBean
-    private TenantContextResolver tenants;
-
-    @BeforeEach
-    void setUp() {
-        when(tenants.resolveTenantId(any(), any())).thenReturn(Mono.just("t1"));
-    }
 
     // ---- GET /inventory/products ------------------------------------------------
 
@@ -54,7 +28,7 @@ class InventoryProductControllerTest {
         InventoryApiSchemas.Pagination pagination = new InventoryApiSchemas.Pagination(1, 10, 0, 0);
         InventoryApiSchemas.ProductListResponse response =
                 new InventoryApiSchemas.ProductListResponse(List.of(), pagination, null);
-        when(service.listProducts(eq("t1"), anyInt(), anyInt(), any(), any(), any(), any(), any()))
+        when(productInventoryService.listProducts(eq("t1"), anyInt(), anyInt(), any(), any(), any(), any(), any()))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(BASE)
@@ -71,7 +45,7 @@ class InventoryProductControllerTest {
         InventoryApiSchemas.Pagination pagination = new InventoryApiSchemas.Pagination(1, 5, 0, 0);
         InventoryApiSchemas.ProductListResponse response =
                 new InventoryApiSchemas.ProductListResponse(List.of(), pagination, null);
-        when(service.listProducts(eq("t1"), eq(1), eq(5), eq("Amox"),
+        when(productInventoryService.listProducts(eq("t1"), eq(1), eq(5), eq("Amox"),
                 eq("Antibiotics"), eq(Enums.ProductStatus.available), any(), any()))
                 .thenReturn(Mono.just(response));
 
@@ -92,7 +66,7 @@ class InventoryProductControllerTest {
     @Test
     void createProduct_returns_201_with_product_detail() {
         InventoryApiSchemas.ProductDetail detail = productDetail();
-        when(service.createProduct(eq("t1"), any(InventoryApiSchemas.CreateProductRequest.class)))
+        when(productInventoryService.createProduct(eq("t1"), any(InventoryApiSchemas.CreateProductRequest.class)))
                 .thenReturn(Mono.just(detail));
 
         client.post().uri(BASE)
@@ -106,12 +80,12 @@ class InventoryProductControllerTest {
 
     @Test
     void createProduct_returns_409_on_duplicate_ppb_code() {
-        when(service.createProduct(eq("t1"), any()))
+        when(productInventoryService.createProduct(eq("t1"), any()))
                 .thenReturn(Mono.error(new ConflictException("Duplicate PPB code")));
 
         client.post().uri(BASE)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("{\"product_name\":\"Dup\",\"generic_name\":\"Dup\",\"category\":\"Antibiotics\"}")
+                .bodyValue("{\"product_name\":\"Dup\",\"generic_name\":\"Dup\",\"category\":\"Antibiotics\",\"unit_of_measure\":\"capsules\",\"reorder_level\":10,\"maximum_stock\":100,\"ppb_code\":\"PPB-DUP\"}")
                 .exchange()
                 .expectStatus().isEqualTo(409)
                 .expectBody()
@@ -120,16 +94,13 @@ class InventoryProductControllerTest {
 
     @Test
     void createProduct_returns_400_on_validation_error() {
-        when(service.createProduct(eq("t1"), any()))
-                .thenReturn(Mono.error(new ServiceValidationException("Missing required fields")));
-
         client.post().uri(BASE)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"product_name\":\"\"}")
                 .exchange()
                 .expectStatus().isBadRequest()
                 .expectBody()
-                .jsonPath("$.code").isEqualTo("BAD_REQUEST");
+                .jsonPath("$.code").isEqualTo("VALIDATION_ERROR");
     }
 
     // ---- POST /inventory/products/drafts ----------------------------------------
@@ -138,7 +109,7 @@ class InventoryProductControllerTest {
     void saveDraft_returns_201_with_draft() {
         InventoryApiSchemas.ProductDraft draft = new InventoryApiSchemas.ProductDraft(
                 DRAFT_ID, Enums.WizardStep.ONE, null, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z");
-        when(service.saveDraft(eq("t1"), any())).thenReturn(Mono.just(draft));
+        when(productInventoryService.saveDraft(eq("t1"), any())).thenReturn(Mono.just(draft));
 
         client.post().uri(BASE + "/drafts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -156,7 +127,7 @@ class InventoryProductControllerTest {
     void getDraft_returns_200_with_draft() {
         InventoryApiSchemas.ProductDraft draft = new InventoryApiSchemas.ProductDraft(
                 DRAFT_ID, Enums.WizardStep.TWO, null, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z");
-        when(service.getDraft(eq("t1"), eq(DRAFT_ID))).thenReturn(Mono.just(draft));
+        when(productInventoryService.getDraft(eq("t1"), eq(DRAFT_ID))).thenReturn(Mono.just(draft));
 
         client.get().uri(BASE + "/drafts/" + DRAFT_ID)
                 .accept(MediaType.APPLICATION_JSON)
@@ -169,7 +140,7 @@ class InventoryProductControllerTest {
 
     @Test
     void getDraft_returns_404_when_draft_not_found() {
-        when(service.getDraft(eq("t1"), any())).thenReturn(Mono.error(new ResourceNotFoundException("Draft not found")));
+        when(productInventoryService.getDraft(eq("t1"), any())).thenReturn(Mono.error(new ResourceNotFoundException("Draft not found")));
 
         client.get().uri(BASE + "/drafts/" + UUID.randomUUID())
                 .accept(MediaType.APPLICATION_JSON)
@@ -185,7 +156,7 @@ class InventoryProductControllerTest {
     void patchDraft_returns_200_with_updated_draft() {
         InventoryApiSchemas.ProductDraft draft = new InventoryApiSchemas.ProductDraft(
                 DRAFT_ID, Enums.WizardStep.THREE, null, "2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z");
-        when(service.patchDraft(eq("t1"), eq(DRAFT_ID), any())).thenReturn(Mono.just(draft));
+        when(productInventoryService.patchDraft(eq("t1"), eq(DRAFT_ID), any())).thenReturn(Mono.just(draft));
 
         client.patch().uri(BASE + "/drafts/" + DRAFT_ID)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -201,7 +172,7 @@ class InventoryProductControllerTest {
     @Test
     void getProduct_returns_200_with_product_detail() {
         InventoryApiSchemas.ProductDetail detail = productDetail();
-        when(service.getProduct(eq("t1"), eq(PRODUCT_ID))).thenReturn(Mono.just(detail));
+        when(productInventoryService.getProduct(eq("t1"), eq(PRODUCT_ID))).thenReturn(Mono.just(detail));
 
         client.get().uri(BASE + "/" + PRODUCT_ID)
                 .accept(MediaType.APPLICATION_JSON)
@@ -214,7 +185,7 @@ class InventoryProductControllerTest {
 
     @Test
     void getProduct_returns_404_when_not_found() {
-        when(service.getProduct(eq("t1"), any())).thenReturn(Mono.error(new ResourceNotFoundException("Product not found")));
+        when(productInventoryService.getProduct(eq("t1"), any())).thenReturn(Mono.error(new ResourceNotFoundException("Product not found")));
 
         client.get().uri(BASE + "/" + UUID.randomUUID())
                 .accept(MediaType.APPLICATION_JSON)
@@ -227,7 +198,7 @@ class InventoryProductControllerTest {
     @Test
     void patchProduct_returns_200_with_updated_product() {
         InventoryApiSchemas.ProductDetail detail = productDetail();
-        when(service.updateProduct(eq("t1"), eq(PRODUCT_ID), any())).thenReturn(Mono.just(detail));
+        when(productInventoryService.updateProduct(eq("t1"), eq(PRODUCT_ID), any())).thenReturn(Mono.just(detail));
 
         client.patch().uri(BASE + "/" + PRODUCT_ID)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -242,7 +213,7 @@ class InventoryProductControllerTest {
 
     @Test
     void deleteProduct_returns_204_no_content() {
-        when(service.deleteProduct(eq("t1"), eq(PRODUCT_ID))).thenReturn(Mono.empty());
+        when(productInventoryService.deleteProduct(eq("t1"), eq(PRODUCT_ID))).thenReturn(Mono.empty());
 
         client.delete().uri(BASE + "/" + PRODUCT_ID)
                 .exchange()
@@ -252,7 +223,7 @@ class InventoryProductControllerTest {
 
     @Test
     void deleteProduct_returns_404_when_product_not_found() {
-        when(service.deleteProduct(eq("t1"), any())).thenReturn(Mono.error(new ResourceNotFoundException("Product not found")));
+        when(productInventoryService.deleteProduct(eq("t1"), any())).thenReturn(Mono.error(new ResourceNotFoundException("Product not found")));
 
         client.delete().uri(BASE + "/" + UUID.randomUUID())
                 .exchange()
