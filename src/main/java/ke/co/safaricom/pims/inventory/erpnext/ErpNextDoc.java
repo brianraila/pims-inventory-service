@@ -63,8 +63,8 @@ public record ErpNextDoc(
         @JsonProperty("manufacturing_date") String manufacturingDate,
         @JsonProperty("supplier") String supplier,
         @JsonProperty("batch_qty") Double batchQty,
-        @JsonProperty("custom_pims_unit_cost") Double customPimsUnitCost,
-        @JsonProperty("custom_pims_trade_cost") Double customPimsTradeCost,
+        @JsonProperty("pims_unit_cost") Double customPimsUnitCost,
+        @JsonProperty("pims_trade_cost") Double customPimsTradeCost,
 
         // --- Supplier ---
         @JsonProperty("supplier_name") String supplierName,
