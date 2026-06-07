@@ -63,7 +63,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(UpstreamServiceException.class)
     public ResponseEntity<ErrorResponse> handleUpstream(UpstreamServiceException ex, ServerWebExchange exchange) {
-        logClientError(exchange, ex, ex.getMessage());
+        logger.error(
+                "Upstream error on {} {}: {} ({})",
+                exchange.getRequest().getMethod(),
+                exchange.getRequest().getPath(),
+                ex.getMessage(),
+                ex.getErrorCode());
         HttpStatus status = ex.getErrorCode() == ErrorCode.SERVICE_UNAVAILABLE
                 ? HttpStatus.SERVICE_UNAVAILABLE
                 : HttpStatus.BAD_GATEWAY;
@@ -73,7 +78,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(WebClientRequestException.class)
     public ResponseEntity<ErrorResponse> handleWebClientRequest(
             WebClientRequestException ex, ServerWebExchange exchange) {
-        logClientError(exchange, ex, ex.getMessage());
+        logger.error(
+                "Unable to reach ERPNext on {} {}: {}",
+                exchange.getRequest().getMethod(),
+                exchange.getRequest().getPath(),
+                ex.getMessage());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(ErrorResponse.of(
                         ErrorCode.SERVICE_UNAVAILABLE, "Unable to reach ERPNext. Please try again later."));

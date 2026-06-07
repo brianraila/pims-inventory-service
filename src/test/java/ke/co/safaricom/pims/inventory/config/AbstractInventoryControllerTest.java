@@ -3,12 +3,14 @@ package ke.co.safaricom.pims.inventory.config;
 import ke.co.safaricom.pims.inventory.api.PurchaseOrderController;
 import ke.co.safaricom.pims.inventory.exception.handler.GlobalExceptionHandler;
 import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
+import ke.co.safaricom.pims.inventory.service.CategoryService;
 import ke.co.safaricom.pims.inventory.service.OrderPaymentService;
 import ke.co.safaricom.pims.inventory.service.PurchaseOrderService;
 import ke.co.safaricom.pims.inventory.service.ReceiptService;
 import ke.co.safaricom.pims.inventory.service.SalesOrderService;
 import ke.co.safaricom.pims.inventory.web.api.InventoryAdjustmentController;
 import ke.co.safaricom.pims.inventory.web.api.InventoryBatchController;
+import ke.co.safaricom.pims.inventory.web.api.InventoryCategoryController;
 import ke.co.safaricom.pims.inventory.web.api.InventoryProductController;
 import ke.co.safaricom.pims.inventory.web.api.ManufacturersController;
 import ke.co.safaricom.pims.inventory.web.api.SalesOrderController;
@@ -34,6 +36,7 @@ import static org.mockito.Mockito.when;
         controllers = {
             InventoryProductController.class,
             InventoryBatchController.class,
+            InventoryCategoryController.class,
             TerminologyController.class,
             SalesOrderController.class,
             ManufacturersController.class,
@@ -61,6 +64,9 @@ public abstract class AbstractInventoryControllerTest {
 
     @MockBean
     protected ReceiptService receiptService;
+
+    @MockBean
+    protected CategoryService categoryService;
 
     @MockBean
     protected PurchaseOrderService purchaseOrderService;

@@ -3,7 +3,6 @@ package ke.co.safaricom.pims.inventory.web.api;
 import ke.co.safaricom.pims.inventory.config.AbstractInventoryControllerTest;
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
-import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
 import ke.co.safaricom.pims.inventory.web.model.Enums;
 import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
 import org.junit.jupiter.api.Test;
@@ -95,9 +94,6 @@ class InventoryProductControllerTest extends AbstractInventoryControllerTest {
 
     @Test
     void createProduct_returns_400_on_validation_error() {
-        when(productInventoryService.createProduct(eq("t1"), any()))
-                .thenReturn(Mono.error(new ServiceValidationException("Missing required fields")));
-
         client.post().uri(BASE)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"product_name\":\"\"}")

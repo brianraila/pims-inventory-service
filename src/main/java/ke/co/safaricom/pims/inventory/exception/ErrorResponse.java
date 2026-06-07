@@ -20,7 +20,7 @@ public record ErrorResponse(
     }
 
     public static ErrorResponse validation(ErrorCode code, String message, List<FieldError> errors) {
-        return new ErrorResponse(code.name(), message, errors, Map.of());
+        return new ErrorResponse(code.name(), message, errors, null);
     }
 
     public static ErrorResponse withDetails(ErrorCode code, String message, Map<String, Object> details) {
