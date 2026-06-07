@@ -5,6 +5,7 @@ import ke.co.safaricom.pims.inventory.api.dto.CreateStockAdjustmentRequest;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.api.dto.StockAdjustmentResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextDocUtils;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
@@ -763,37 +764,12 @@ public class ProductInventoryService {
         return router.getOne(tenantId, "Stock Entry", name, RAW_SINGLE_TYPE)
                 .map(ErpNextSingleResponse::data)
                 .flatMap(latest -> {
-                    allowZeroValuationRateOnZeroCostItems(latest);
+                    ErpNextDocUtils.allowZeroValuationRateOnZeroCostItems(latest);
                     Map<String, Object> body = new HashMap<>();
                     body.put("doc", latest);
                     return router.callMethod(tenantId, "frappe.client.submit", body, SUBMIT_TYPE);
                 })
                 .map(ErpNextMessageResponse::message);
-    }
-
-    /**
-     * ERPNext blocks submission when a line item has basic_rate=0 unless
-     * allow_zero_valuation_rate is explicitly set. This is common for items
-     * that carry no purchase cost (e.g. test data or donated stock).
-     */
-    @SuppressWarnings("unchecked")
-    private static void allowZeroValuationRateOnZeroCostItems(Map<String, Object> doc) {
-        Object itemsObj = doc.get("items");
-        if (!(itemsObj instanceof List<?> rawList)) return;
-        for (Object raw : rawList) {
-            if (!(raw instanceof Map)) continue;
-            Map<String, Object> item = (Map<String, Object>) raw;
-            Object rate = item.get("basic_rate");
-            boolean isZeroCost;
-            if (rate instanceof Number n) {
-                isZeroCost = n.doubleValue() == 0.0;
-            } else {
-                isZeroCost = true;
-            }
-            if (isZeroCost) {
-                item.put("allow_zero_valuation_rate", 1);
-            }
-        }
     }
 
     private Mono<InventoryApiSchemas.Batch> lastCreatedBatchForItem(String tenantId, String itemCode, String batchNumberGuess) {

@@ -3,6 +3,7 @@ package ke.co.safaricom.pims.inventory.service;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.config.ErpNextProperties;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextDocUtils;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
@@ -141,6 +142,7 @@ public class SalesOrderService {
                 .then(router.getOne(tenantId, DOCTYPE, orderId, RAW_SINGLE_TYPE))
                 .map(ErpNextSingleResponse::data)
                 .flatMap(latest -> {
+                    ErpNextDocUtils.allowZeroValuationRateOnZeroCostItems(latest);
                     Map<String, Object> submitBody = new HashMap<>();
                     submitBody.put("doc", latest);
                     return router.callMethod(tenantId, "frappe.client.submit", submitBody, SUBMIT_TYPE)
