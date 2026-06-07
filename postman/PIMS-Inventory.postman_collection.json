@@ -428,16 +428,17 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/terminology/search?q=amoxicillin&source=all&limit=10",
+              "raw": "{{base_url}}/inventory/terminology/search?q=amoxicillin&source=all&limit=10",
               "host": ["{{base_url}}"],
-              "path": ["terminology", "search"],
+              "path": ["inventory", "terminology", "search"],
               "query": [
                 { "key": "q",      "value": "amoxicillin" },
                 { "key": "source", "value": "all"         },
-                { "key": "limit",  "value": "10"          }
+                { "key": "limit",  "value": "10"          },
+                { "key": "manufacturer_id", "value": "", "disabled": true }
               ]
             },
-            "description": "q must be at least 2 characters.\nsource options: rxnorm | ppb_ndc | all"
+            "description": "q must be at least 2 characters.\nsource options: rxnorm | ppb_ndc | all\nmanufacturer_id: optional UUID filter"
           }
         },
         {
@@ -446,9 +447,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/terminology/products/:terminology_id",
+              "raw": "{{base_url}}/inventory/terminology/products/:terminology_id",
               "host": ["{{base_url}}"],
-              "path": ["terminology", "products", ":terminology_id"],
+              "path": ["inventory", "terminology", "products", ":terminology_id"],
               "variable": [
                 { "key": "terminology_id", "value": "723", "description": "RxNorm CUI or PPB NDC code" }
               ]
@@ -468,9 +469,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/manufacturers?limit=50",
+              "raw": "{{base_url}}/inventory/manufacturers?limit=50",
               "host": ["{{base_url}}"],
-              "path": ["manufacturers"],
+              "path": ["inventory", "manufacturers"],
               "query": [
                 { "key": "limit",  "value": "50" },
                 { "key": "search", "value": "",   "disabled": true }
@@ -755,7 +756,7 @@
               "host": ["{{base_url}}"],
               "path": ["inventory", "orders", "{{order_id}}", "pay"]
             },
-            "description": "Records how a SUBMITTED order was paid: creates and immediately submits a Payment Entry against the Sales Invoice in one step — this is what posts the GL entries and flips the invoice's status to 'Paid'. Must be called AFTER /submit (ERPNext rejects a Payment Entry referencing a draft invoice with 'Sales Invoice X must be submitted').\n\npayment_method: cash | mpesa — resolved (case/punctuation-insensitively) against the tenant's configured Mode of Payment; the request fails clearly listing the available modes if none match\namount_tendered: amount the customer physically handed over; change_due in the response = max(0, amount_tendered - grand_total) (amount applied to the invoice is capped at grand_total)\ntransaction_ref: M-Pesa receipt number (omit/null for cash); also doubles as an idempotency key — replaying the same request with the same ref returns the already-recorded Payment Entry instead of creating a duplicate (this is also how the Kafka PaymentEvent consumer stays idempotent on redelivery)"
+            "description": "Records how a SUBMITTED order was paid: creates and immediately submits a Payment Entry against the Sales Invoice in one step — this is what posts the GL entries and flips the invoice's status to 'Paid'. Must be called AFTER /submit (ERPNext rejects a Payment Entry referencing a draft invoice with 'Sales Invoice X must be submitted').\n\npayment_method: cash | mpesa — resolved (case/punctuation-insensitively) against the tenant's configured Mode of Payment; the request fails clearly listing the available modes if none match\namount_tendered: amount the customer physically handed over; change_due in the response = max(0, amount_tendered - grand_total) (amount applied to the invoice is capped at grand_total)\ntransaction_ref: M-Pesa receipt number (omit/null for cash); also doubles as an idempotency key — replaying the same request with the same ref returns the already-recorded Payment Entry instead of creating a duplicate (this is also how PaymentKafkaConsumer stays idempotent on redelivery via transaction_ref on topic pims.payment.success)"
           }
         },
         {

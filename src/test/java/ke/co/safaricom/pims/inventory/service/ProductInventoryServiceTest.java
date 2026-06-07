@@ -5,6 +5,7 @@ import ke.co.safaricom.pims.inventory.api.dto.CreateStockAdjustmentRequest;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.api.dto.StockAdjustmentResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
@@ -57,10 +58,15 @@ class ProductInventoryServiceTest {
     private ProductInventoryService service;
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() {
         drafts = new ProductDraftMemoryStore();
         service = new ProductInventoryService(router, inventoryMapper, inventoryService, categoryService, drafts);
         when(categoryService.validateLeafCategoryExists(anyString(), anyString())).thenReturn(Mono.empty());
+        // Default: no Sales Invoice Items available — order frequency falls back to alphabetical
+        lenient().doReturn(Mono.just(new ErpNextListResponse<>(List.<Map<String, Object>>of())))
+                .when(router).getList(anyString(), eq("Sales Invoice Item"), anyMap(),
+                        any(org.springframework.core.ParameterizedTypeReference.class));
     }
 
     // ---- helpers ----------------------------------------------------------------
@@ -72,7 +78,7 @@ class ProductInventoryServiceTest {
 
     private BatchResponse batch(String id, String itemCode, double qty, String expiry) {
         return new BatchResponse(id, "BATCH-" + id, itemCode, qty, "available",
-                expiry, null, "Main Warehouse", null, "2024-01-01", 10.0, "Supplier A", null);
+                expiry, null, "Main Warehouse", null, "2024-01-01", 10.0, 0.0, "Supplier A", null);
     }
 
     private StockAdjustmentResponse adjustment(String id, String type, double qty, String product) {
@@ -98,7 +104,7 @@ class ProductInventoryServiceTest {
                 null, null, null,
                 null,              // item (Batch parent link)
                 null, null, null, null,
-                null, null, null, null, null, null,  // batchQty, supplierName, warehouseName, itemGroupName, parentItemGroup, isGroup
+                null, null, null, null, null, null, null, null,  // batchQty, customPimsUnitCost, customPimsTradeCost, supplierName, warehouseName, itemGroupName, parentItemGroup, isGroup
                 null, null, null, null, null, null, null,
                 null, null, null, null, null,
                 null, null, null, null,   // customer, currency, netTotal, totalTaxesAndCharges
@@ -122,7 +128,7 @@ class ProductInventoryServiceTest {
     void listProducts_returns_paginated_list() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null, "most_ordered"))
                 .assertNext(resp -> {
                     assertThat(resp.data()).hasSize(1);
                     assertThat(resp.pagination().page()).isEqualTo(1);
@@ -136,7 +142,7 @@ class ProductInventoryServiceTest {
     void listProducts_includes_available_quantity_distinct_from_total_stock() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null, "most_ordered"))
                 .assertNext(resp -> {
                     InventoryApiSchemas.ProductSummary summary = resp.data().get(0);
                     assertThat(summary.totalStock()).isEqualTo(100.0);
@@ -150,7 +156,7 @@ class ProductInventoryServiceTest {
     void listProducts_search_filters_by_product_name() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, "Amoxicillin", null, null, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, "Amoxicillin", null, null, null, "most_ordered"))
                 .assertNext(resp -> assertThat(resp.data()).hasSize(1))
                 .verifyComplete();
     }
@@ -159,7 +165,7 @@ class ProductInventoryServiceTest {
     void listProducts_search_no_match_returns_empty() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, "Ibuprofen", null, null, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, "Ibuprofen", null, null, null, "most_ordered"))
                 .assertNext(resp -> assertThat(resp.data()).isEmpty())
                 .verifyComplete();
     }
@@ -168,7 +174,7 @@ class ProductInventoryServiceTest {
     void listProducts_category_filter_excludes_non_matching() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, "Analgesics", null, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, "Analgesics", null, null, "most_ordered"))
                 .assertNext(resp -> assertThat(resp.data()).isEmpty())
                 .verifyComplete();
     }
@@ -177,7 +183,7 @@ class ProductInventoryServiceTest {
     void listProducts_category_filter_includes_matching() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, "Antibiotics", null, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, "Antibiotics", null, null, "most_ordered"))
                 .assertNext(resp -> assertThat(resp.data()).hasSize(1))
                 .verifyComplete();
     }
@@ -186,7 +192,7 @@ class ProductInventoryServiceTest {
     void listProducts_status_filter_available_includes_well_stocked() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, Enums.ProductStatus.available, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, Enums.ProductStatus.available, null, "most_ordered"))
                 .assertNext(resp -> assertThat(resp.data()).hasSize(1))
                 .verifyComplete();
     }
@@ -195,7 +201,7 @@ class ProductInventoryServiceTest {
     void listProducts_status_filter_out_of_stock_excludes_stocked_item() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, Enums.ProductStatus.out_of_stock, null))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, Enums.ProductStatus.out_of_stock, null, "most_ordered"))
                 .assertNext(resp -> assertThat(resp.data()).isEmpty())
                 .verifyComplete();
     }
@@ -205,7 +211,7 @@ class ProductInventoryServiceTest {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
         UUID unknownMfrId = UUID.randomUUID();
 
-        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, unknownMfrId))
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, unknownMfrId, "most_ordered"))
                 .assertNext(resp -> assertThat(resp.data()).isEmpty())
                 .verifyComplete();
     }
@@ -223,12 +229,108 @@ class ProductInventoryServiceTest {
         when(inventoryService.defaultWarehouse()).thenReturn(WAREHOUSE);
         when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE))).thenReturn(Mono.just(Map.of()));
 
-        StepVerifier.create(service.listProducts(TENANT, 2, 1, null, null, null, null))
+        StepVerifier.create(service.listProducts(TENANT, 2, 1, null, null, null, null, "most_ordered"))
                 .assertNext(resp -> {
                     assertThat(resp.data()).hasSize(1);
                     assertThat(resp.pagination().page()).isEqualTo(2);
                     assertThat(resp.pagination().total()).isEqualTo(2);
                     assertThat(resp.pagination().totalPages()).isEqualTo(2);
+                })
+                .verifyComplete();
+    }
+
+    // ---- sort: most_ordered / alphabetical --------------------------------------
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void listProducts_most_ordered_sort_places_highest_frequency_item_first() {
+        InventoryItemResponse itemA = new InventoryItemResponse(
+                "ITEM-A", "Alpha Drug", "", "Antibiotics",
+                false, false, null, 0, 0, "Nos", List.of(), Map.of());
+        InventoryItemResponse itemB = new InventoryItemResponse(
+                "ITEM-B", "Beta Drug", "", "Antibiotics",
+                false, false, null, 0, 0, "Nos", List.of(), Map.of());
+        when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemA, itemB)));
+        when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of()));
+        when(inventoryMapper.copyWithBatches(eq(itemA), anyList())).thenReturn(itemA);
+        when(inventoryMapper.copyWithBatches(eq(itemB), anyList())).thenReturn(itemB);
+        when(inventoryService.defaultWarehouse()).thenReturn(WAREHOUSE);
+        when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE))).thenReturn(Mono.just(Map.of()));
+
+        // ITEM-B ordered more (qty=200) vs ITEM-A (qty=30)
+        List<Map<String, Object>> siItems = List.of(
+                Map.of("item_code", "ITEM-A", "qty", 30.0),
+                Map.of("item_code", "ITEM-B", "qty", 200.0)
+        );
+        doReturn(Mono.just(new ErpNextListResponse<>(siItems)))
+                .when(router).getList(eq(TENANT), eq("Sales Invoice Item"), anyMap(),
+                        any(org.springframework.core.ParameterizedTypeReference.class));
+
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null, "most_ordered"))
+                .assertNext(resp -> {
+                    assertThat(resp.data()).hasSize(2);
+                    assertThat(resp.data().get(0).productName()).isEqualTo("Beta Drug");
+                    assertThat(resp.data().get(1).productName()).isEqualTo("Alpha Drug");
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void listProducts_alphabetical_sort_skips_order_frequency_and_returns_alphabetical_order() {
+        InventoryItemResponse itemA = new InventoryItemResponse(
+                "ITEM-A", "Zebra Drug", "", "Antibiotics",
+                false, false, null, 0, 0, "Nos", List.of(), Map.of());
+        InventoryItemResponse itemB = new InventoryItemResponse(
+                "ITEM-B", "Aspirin", "", "Antibiotics",
+                false, false, null, 0, 0, "Nos", List.of(), Map.of());
+        when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemA, itemB)));
+        when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of()));
+        when(inventoryMapper.copyWithBatches(eq(itemA), anyList())).thenReturn(itemA);
+        when(inventoryMapper.copyWithBatches(eq(itemB), anyList())).thenReturn(itemB);
+        when(inventoryService.defaultWarehouse()).thenReturn(WAREHOUSE);
+        when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE))).thenReturn(Mono.just(Map.of()));
+
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null, "alphabetical"))
+                .assertNext(resp -> {
+                    assertThat(resp.data()).hasSize(2);
+                    assertThat(resp.data().get(0).productName()).isEqualTo("Aspirin");
+                    assertThat(resp.data().get(1).productName()).isEqualTo("Zebra Drug");
+                })
+                .verifyComplete();
+
+        // ERPNext should NOT be contacted for Sales Invoice Items when sort=alphabetical
+        verify(router, never()).getList(anyString(), eq("Sales Invoice Item"), anyMap(),
+                any(org.springframework.core.ParameterizedTypeReference.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void listProducts_order_frequency_error_falls_back_to_alphabetical() {
+        InventoryItemResponse itemA = new InventoryItemResponse(
+                "ITEM-A", "Zebra Drug", "", "Antibiotics",
+                false, false, null, 0, 0, "Nos", List.of(), Map.of());
+        InventoryItemResponse itemB = new InventoryItemResponse(
+                "ITEM-B", "Aspirin", "", "Antibiotics",
+                false, false, null, 0, 0, "Nos", List.of(), Map.of());
+        when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemA, itemB)));
+        when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of()));
+        when(inventoryMapper.copyWithBatches(eq(itemA), anyList())).thenReturn(itemA);
+        when(inventoryMapper.copyWithBatches(eq(itemB), anyList())).thenReturn(itemB);
+        when(inventoryService.defaultWarehouse()).thenReturn(WAREHOUSE);
+        when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE))).thenReturn(Mono.just(Map.of()));
+
+        // Simulate ERPNext being unavailable
+        doReturn(Mono.<ErpNextListResponse<?>>error(new RuntimeException("ERPNext unreachable")))
+                .when(router).getList(eq(TENANT), eq("Sales Invoice Item"), anyMap(),
+                        any(org.springframework.core.ParameterizedTypeReference.class));
+
+        // Should complete successfully, falling back to alphabetical order
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null, "most_ordered"))
+                .assertNext(resp -> {
+                    assertThat(resp.data()).hasSize(2);
+                    assertThat(resp.data().get(0).productName()).isEqualTo("Aspirin");
+                    assertThat(resp.data().get(1).productName()).isEqualTo("Zebra Drug");
                 })
                 .verifyComplete();
     }
@@ -554,7 +656,7 @@ class ProductInventoryServiceTest {
         // batchNumber must match req.batchNumber() so lastCreatedBatchForItem finds it
         BatchResponse createdBatch = new BatchResponse(
                 "erp-b99", "BATCH-99", ITEM_CODE, 100.0, "available",
-                "2027-01-01", null, "Main Warehouse", null, "2024-01-01", 10.0, "Supplier A", null);
+                "2027-01-01", null, "Main Warehouse", null, "2024-01-01", 10.0, 0.0, "Supplier A", null);
         when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
         when(router.create(eq(TENANT), eq("Batch"), anyMap(), any(Class.class)))
                 .thenReturn(Mono.just(singleResponse(itemDoc("erp-b99"))));
@@ -613,7 +715,7 @@ class ProductInventoryServiceTest {
         // batchNumber must match cells[0] so lastCreatedBatchForItem can find it
         BatchResponse createdBatch = new BatchResponse(
                 "erp-csv-1", "BATCH-csv-1", ITEM_CODE, 50.0, "available",
-                "2027-06-01", null, "Main Warehouse", null, "2024-01-01", 12.5, null, null);
+                "2027-06-01", null, "Main Warehouse", null, "2024-01-01", 12.5, 0.0, null, null);
         when(router.create(eq(TENANT), eq("Batch"), anyMap(), any(Class.class)))
                 .thenReturn(Mono.just(singleResponse(itemDoc(ITEM_CODE))));
         when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of(createdBatch)));
@@ -711,6 +813,57 @@ class ProductInventoryServiceTest {
         StepVerifier.create(service.adjustStock(TENANT, productId, req, "user@test.com", "Test User"))
                 .expectError(ServiceValidationException.class)
                 .verify();
+    }
+
+    // ---- non-batch-tracked items ------------------------------------------------
+
+    @Test
+    void listProducts_nonBatchTracked_item_uses_availableQuantity_for_total_stock() {
+        // Item has NO batches (non-batch-tracked), but Bin reports stock via availableQuantity.
+        // Without the fix, total_stock would be 0 → status = out_of_stock.
+        // With the fix, total_stock falls back to availableQuantity → status = available.
+        InventoryItemResponse itemResp = new InventoryItemResponse(
+                ITEM_CODE, "Paracetamol 500mg", "", "Analgesics",
+                false, false, null, 20.0, 200.0, "Nos", List.of(), Map.of());
+        when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
+        when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of()));
+        when(inventoryMapper.copyWithBatches(eq(itemResp), anyList())).thenReturn(itemResp);
+        when(inventoryService.defaultWarehouse()).thenReturn(WAREHOUSE);
+        // Bin reports 75 units available even though there are no Batch records
+        when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE)))
+                .thenReturn(Mono.just(Map.of(ITEM_CODE, 75.0)));
+
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null, "most_ordered"))
+                .assertNext(resp -> {
+                    assertThat(resp.data()).hasSize(1);
+                    InventoryApiSchemas.ProductSummary summary = resp.data().get(0);
+                    assertThat(summary.totalStock()).isEqualTo(75.0);
+                    assertThat(summary.status()).contains(Enums.ProductStatus.available);
+                    assertThat(summary.status()).doesNotContain(Enums.ProductStatus.out_of_stock);
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void listProducts_nonBatchTracked_item_with_zero_bin_stock_shows_out_of_stock() {
+        InventoryItemResponse itemResp = new InventoryItemResponse(
+                ITEM_CODE, "Paracetamol 500mg", "", "Analgesics",
+                false, false, null, 20.0, 200.0, "Nos", List.of(), Map.of());
+        when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
+        when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of()));
+        when(inventoryMapper.copyWithBatches(eq(itemResp), anyList())).thenReturn(itemResp);
+        when(inventoryService.defaultWarehouse()).thenReturn(WAREHOUSE);
+        when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE)))
+                .thenReturn(Mono.just(Map.of(ITEM_CODE, 0.0)));
+
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null, "most_ordered"))
+                .assertNext(resp -> {
+                    assertThat(resp.data()).hasSize(1);
+                    InventoryApiSchemas.ProductSummary summary = resp.data().get(0);
+                    assertThat(summary.totalStock()).isEqualTo(0.0);
+                    assertThat(summary.status()).contains(Enums.ProductStatus.out_of_stock);
+                })
+                .verifyComplete();
     }
 
     // ---- manufacturers / terminology --------------------------------------------

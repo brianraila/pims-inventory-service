@@ -17,6 +17,7 @@ public record BatchResponse(
         @Schema(description = "Branch identifier") String branch,
         @Schema(description = "Date received (YYYY-MM-DD)") String receivedDate,
         @Schema(description = "Unit cost") double cost,
+        @Schema(description = "Trade cost (selling price basis)") double tradeCost,
         @Schema(description = "Supplier name") String supplier,
         @Schema(description = "Goods Receipt Note reference") String grn
 ) {}

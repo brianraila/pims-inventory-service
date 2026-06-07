@@ -111,7 +111,10 @@ class InventoryServiceTest {
         rawLatest.put("purpose", "Material Receipt");
         rawLatest.put("modified", "2026-06-06 10:00:00.000000");
         rawLatest.put("docstatus", 0);
-        rawLatest.put("items", List.of(Map.of("item_code", "PIMS-ITEM-001", "qty", 10.0)));
+        Map<String, Object> lineItem = new HashMap<>();
+        lineItem.put("item_code", "PIMS-ITEM-001");
+        lineItem.put("qty", 10.0);
+        rawLatest.put("items", new java.util.ArrayList<>(List.of(lineItem)));
 
         when(router.create(eq(TENANT), eq("Stock Entry"), anyMap(), eq(SINGLE_TYPE)))
                 .thenReturn(Mono.just(new ErpNextSingleResponse<>(stockEntryDoc("STE-0001", 0))));

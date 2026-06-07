@@ -19,7 +19,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,7 +54,7 @@ class InventoryProductControllerTest {
         InventoryApiSchemas.Pagination pagination = new InventoryApiSchemas.Pagination(1, 10, 0, 0);
         InventoryApiSchemas.ProductListResponse response =
                 new InventoryApiSchemas.ProductListResponse(List.of(), pagination, null);
-        when(service.listProducts(eq("t1"), anyInt(), anyInt(), any(), any(), any(), any()))
+        when(service.listProducts(eq("t1"), anyInt(), anyInt(), any(), any(), any(), any(), any()))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(BASE)
@@ -73,7 +72,7 @@ class InventoryProductControllerTest {
         InventoryApiSchemas.ProductListResponse response =
                 new InventoryApiSchemas.ProductListResponse(List.of(), pagination, null);
         when(service.listProducts(eq("t1"), eq(1), eq(5), eq("Amox"),
-                eq("Antibiotics"), eq(Enums.ProductStatus.available), any()))
+                eq("Antibiotics"), eq(Enums.ProductStatus.available), any(), any()))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(uriBuilder -> uriBuilder.path(BASE)
@@ -272,6 +271,6 @@ class InventoryProductControllerTest {
                 null, "", "",
                 null, "PPB-001", null, Enums.RegulatoryStatus.approved,
                 "500mg", "Capsules", null, null, null,
-                50.0, 500.0, null, 100.0, 1000.0, "KES", 400.0, List.of(), batches);
+                50.0, 500.0, null, 100.0, 1000.0, "KES", 400.0, List.of(), batches, null, null);
     }
 }
