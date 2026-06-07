@@ -2,6 +2,7 @@ package ke.co.safaricom.pims.inventory.service;
 
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
@@ -46,6 +47,17 @@ public class TaxConfigService {
         return defaultTemplateCache.computeIfAbsent(tenantId, this::fetchDefaultTemplate);
     }
 
+
+    /**
+     * Fetches a tax template by name via {@code frappe.client.get}. Resource GET by document name
+     * fails for names containing {@code %} (e.g. {@code Kenya VAT 16% - S}) through the wrapper.
+     */
+    private Mono<ErpNextDoc> fetchTemplateByName(String tenantId, String name) {
+        Map<String, Object> body = Map.of("doctype", DOCTYPE, "name", name);
+        return router.callMethod(tenantId, "frappe.client.get", body, DOC_MESSAGE_TYPE)
+                .map(ErpNextMessageResponse::message);
+    }
+
     private Mono<DefaultTaxInfo> fetchDefaultTemplate(String tenantId) {
         Map<String, String> params = new HashMap<>();
         params.put("fields", "[\"name\",\"company\"]");
@@ -57,14 +69,11 @@ public class TaxConfigService {
                         return Mono.empty();
                     }
                     String templateName = resp.data().get(0).name();
-                    return router.getOne(tenantId, DOCTYPE, templateName, SINGLE_TYPE)
-                            .map(full -> {
-                                ErpNextDoc template = full.data();
-                                return new DefaultTaxInfo(
-                                        template.name(),
-                                        template.company(),
-                                        toInvoiceTaxRows(template.taxes()));
-                            });
+                    return fetchTemplateByName(tenantId, templateName)
+                            .map(template -> new DefaultTaxInfo(
+                                    template.name(),
+                                    template.company(),
+                                    toInvoiceTaxRows(template.taxes())));
                 })
                 .cache(Duration.ofMinutes(5));
     }
@@ -87,8 +96,8 @@ public class TaxConfigService {
     // ---- Get single ---------------------------------------------------------
 
     public Mono<TaxSchemas.TaxTemplateResponse> getTemplate(String tenantId, String name) {
-        return router.getOne(tenantId, DOCTYPE, name, SINGLE_TYPE)
-                .map(resp -> toResponse(resp.data()))
+        return fetchTemplateByName(tenantId, name)
+                .map(this::toResponse)
                 .onErrorMap(ResourceNotFoundException.class,
                         ex -> new ResourceNotFoundException(NOT_FOUND_MSG + name));
     }
@@ -107,9 +116,8 @@ public class TaxConfigService {
 
     public Mono<TaxSchemas.TaxTemplateResponse> updateTemplate(
             String tenantId, String name, TaxSchemas.UpdateTaxTemplateRequest req) {
-        return router.getOne(tenantId, DOCTYPE, name, SINGLE_TYPE)
-                .flatMap(existing -> {
-                    ErpNextDoc doc = existing.data();
+        return fetchTemplateByName(tenantId, name)
+                .flatMap(doc -> {
                     String title      = StringUtils.hasText(req.title())   ? req.title()   : doc.name();
                     String company    = StringUtils.hasText(req.company()) ? req.company() : doc.company();
                     boolean isDefault = req.isDefault() != null ? req.isDefault()
@@ -210,5 +218,7 @@ public class TaxConfigService {
             new ParameterizedTypeReference<>() {};
 
     private static final ParameterizedTypeReference<ErpNextSingleResponse<ErpNextDoc>> SINGLE_TYPE =
+            new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<ErpNextDoc>> DOC_MESSAGE_TYPE =
             new ParameterizedTypeReference<>() {};
 }
