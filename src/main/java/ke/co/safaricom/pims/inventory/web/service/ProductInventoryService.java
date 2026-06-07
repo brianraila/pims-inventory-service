@@ -33,6 +33,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -45,10 +46,13 @@ public class ProductInventoryService {
     /** TTL for the per-tenant order-frequency cache (5 minutes). */
     private static final long ORDER_FREQ_TTL_MS = 5 * 60 * 1_000L;
 
+    /** Rows fetched per ERPNext page when aggregating Sales Invoice Item order frequency. */
+    private static final int ORDER_FREQ_PAGE_SIZE = 1000;
+
     private static final ParameterizedTypeReference<ErpNextListResponse<Map<String, Object>>> LIST_MAP_TYPE =
             new ParameterizedTypeReference<>() {};
 
-    /** Per-instance cache: tenantId → aggregated Sales Invoice Item qty per item_code. */
+    /** Per-instance cache: tenantId:sortDays:rankBy → aggregated order frequency per item_code. */
     private final Map<String, CacheEntry> orderFreqCache = new ConcurrentHashMap<>();
 
     private record CacheEntry(Map<String, Double> data, long expiresAt) {
@@ -105,7 +109,10 @@ public class ProductInventoryService {
             String category,
             Enums.ProductStatus statusFilter,
             UUID manufacturerIdFilter,
-            String sort) {
+            String sort,
+            Integer sortDays,
+            String rankBy) {
+        boolean includeOrderFrequency = !"alphabetical".equalsIgnoreCase(sort);
         return listItemsEnriched(tenantId)
                 .zipWith(inventoryService.listBatches(tenantId))
                 .flatMap(tuple -> {
@@ -114,7 +121,7 @@ public class ProductInventoryService {
                     List<String> itemCodes = items.stream().map(InventoryItemResponse::id).toList();
                     return Mono.zip(
                             inventoryService.getStockLevels(tenantId, itemCodes, inventoryService.defaultWarehouse()),
-                            fetchOrderFrequency(tenantId, sort),
+                            fetchOrderFrequency(tenantId, sort, sortDays, rankBy),
                             inventoryService.getSellingPrices(tenantId, itemCodes)
                                     .onErrorReturn(Map.of()))
                             .map(stockTuple -> {
@@ -138,7 +145,12 @@ public class ProductInventoryService {
                                     List<BatchResponse> itemBatches = byItem.getOrDefault(it.id(), List.of());
                                     Map<String, Object> ex = mergedExtras(it);
                                     double available = stockLevels.getOrDefault(it.id(), 0.0);
-                                    InventoryApiSchemas.ProductSummary p = toSummary(tenantId, it, itemBatches, available, sellingPrices);
+                                    UUID productUuid = StableEntityIds.itemId(tenantId, it.id());
+                                    Double frequency = includeOrderFrequency
+                                            ? orderFreqByUuid.getOrDefault(productUuid, 0.0)
+                                            : null;
+                                    InventoryApiSchemas.ProductSummary p = toSummary(
+                                            tenantId, it, itemBatches, available, sellingPrices, frequency);
                                     if (!matchesSearch(p, search, ex)) continue;
                                     if (category != null && !category.isBlank()
                                             && (p.category() == null || !p.category().equalsIgnoreCase(category))) continue;
@@ -170,8 +182,8 @@ public class ProductInventoryService {
     }
 
     /**
-     * Fetches per-item total ordered qty from submitted {@code Sales Invoice Item} records,
-     * aggregated by {@code item_code}. Results are cached per tenant with a 5-minute TTL.
+     * Fetches per-item order frequency from submitted {@code Sales Invoice Item} records.
+     * Results are cached per tenant/sort-window/rank-mode with a 5-minute TTL.
      *
      * <p>Returns an empty map (triggering alphabetical fallback) when:
      * <ul>
@@ -179,28 +191,22 @@ public class ProductInventoryService {
      *   <li>the ERPNext call fails for any reason (warning is logged).</li>
      * </ul>
      */
-    private Mono<Map<String, Double>> fetchOrderFrequency(String tenantId, String sort) {
+    private Mono<Map<String, Double>> fetchOrderFrequency(
+            String tenantId, String sort, Integer sortDays, String rankBy) {
         if ("alphabetical".equalsIgnoreCase(sort)) {
             return Mono.just(Map.of());
         }
-        CacheEntry cached = orderFreqCache.get(tenantId);
+        String normalizedRankBy = normalizeRankBy(rankBy);
+        String cacheKey = orderFreqCacheKey(tenantId, sortDays, normalizedRankBy);
+        CacheEntry cached = orderFreqCache.get(cacheKey);
         if (cached != null && cached.isAlive()) {
             return Mono.just(cached.data());
         }
-        Map<String, String> params = new HashMap<>();
-        params.put("fields", "[\"item_code\",\"qty\"]");
-        params.put("filters", "[[\"docstatus\",\"=\",1]]");
-        params.put("limit_page_length", "500");
-        return router.getList(tenantId, "Sales Invoice Item", params, LIST_MAP_TYPE)
-                .map(resp -> {
-                    Map<String, Double> freq = new HashMap<>();
-                    for (Map<String, Object> row : resp.data()) {
-                        String code = Objects.toString(row.get("item_code"), null);
-                        if (code == null || code.isBlank()) continue;
-                        freq.merge(code, toDoubleOrZero(row.get("qty")), (a, b) -> a + b);
-                    }
+        return fetchAllSalesInvoiceItems(tenantId, sortDays, normalizedRankBy)
+                .map(rows -> aggregateOrderFrequency(rows, normalizedRankBy))
+                .map(freq -> {
                     Map<String, Double> snapshot = Map.copyOf(freq);
-                    orderFreqCache.put(tenantId,
+                    orderFreqCache.put(cacheKey,
                             new CacheEntry(snapshot, System.currentTimeMillis() + ORDER_FREQ_TTL_MS));
                     return snapshot;
                 })
@@ -209,6 +215,81 @@ public class ProductInventoryService {
                             "falling back to alphabetical. Reason: {}", ex.getMessage());
                     return Mono.just(Map.of());
                 });
+    }
+
+    private Mono<List<Map<String, Object>>> fetchAllSalesInvoiceItems(
+            String tenantId, Integer sortDays, String rankBy) {
+        return fetchSalesInvoiceItemPage(tenantId, sortDays, rankBy, 0, new ArrayList<>());
+    }
+
+    private Mono<List<Map<String, Object>>> fetchSalesInvoiceItemPage(
+            String tenantId,
+            Integer sortDays,
+            String rankBy,
+            int offset,
+            List<Map<String, Object>> accumulated) {
+        Map<String, String> params = buildSalesInvoiceItemParams(sortDays, rankBy, offset);
+        return router.getList(tenantId, "Sales Invoice Item", params, LIST_MAP_TYPE)
+                .flatMap(resp -> {
+                    List<Map<String, Object>> page = resp.data();
+                    accumulated.addAll(page);
+                    if (page.size() < ORDER_FREQ_PAGE_SIZE) {
+                        return Mono.just(accumulated);
+                    }
+                    return fetchSalesInvoiceItemPage(
+                            tenantId, sortDays, rankBy, offset + page.size(), accumulated);
+                });
+    }
+
+    private static Map<String, String> buildSalesInvoiceItemParams(
+            Integer sortDays, String rankBy, int offset) {
+        Map<String, String> params = new HashMap<>();
+        boolean byOrders = "orders".equalsIgnoreCase(rankBy);
+        params.put("fields", byOrders ? "[\"item_code\",\"parent\"]" : "[\"item_code\",\"qty\"]");
+        params.put("filters", buildSalesInvoiceItemFilters(sortDays));
+        params.put("limit_page_length", String.valueOf(ORDER_FREQ_PAGE_SIZE));
+        params.put("limit_start", String.valueOf(offset));
+        return params;
+    }
+
+    private static String buildSalesInvoiceItemFilters(Integer sortDays) {
+        if (sortDays == null || sortDays <= 0) {
+            return "[[\"docstatus\",\"=\",1]]";
+        }
+        String cutoff = LocalDate.now().minusDays(sortDays).toString();
+        return "[[\"docstatus\",\"=\",1],[\"posting_date\",\">=\",\"" + cutoff + "\"]]";
+    }
+
+    private static Map<String, Double> aggregateOrderFrequency(
+            List<Map<String, Object>> rows, String rankBy) {
+        if ("orders".equalsIgnoreCase(rankBy)) {
+            Map<String, Set<String>> distinctOrders = new HashMap<>();
+            for (Map<String, Object> row : rows) {
+                String code = Objects.toString(row.get("item_code"), null);
+                String parent = Objects.toString(row.get("parent"), null);
+                if (code == null || code.isBlank() || parent == null || parent.isBlank()) continue;
+                distinctOrders.computeIfAbsent(code, ignored -> new HashSet<>()).add(parent);
+            }
+            Map<String, Double> freq = new HashMap<>();
+            distinctOrders.forEach((code, parents) -> freq.put(code, (double) parents.size()));
+            return freq;
+        }
+        Map<String, Double> freq = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            String code = Objects.toString(row.get("item_code"), null);
+            if (code == null || code.isBlank()) continue;
+            freq.merge(code, toDoubleOrZero(row.get("qty")), Double::sum);
+        }
+        return freq;
+    }
+
+    private static String normalizeRankBy(String rankBy) {
+        return "orders".equalsIgnoreCase(rankBy) ? "orders" : "qty";
+    }
+
+    private static String orderFreqCacheKey(String tenantId, Integer sortDays, String rankBy) {
+        String days = sortDays != null && sortDays > 0 ? sortDays.toString() : "all";
+        return tenantId + ":" + days + ":" + rankBy;
     }
 
     /**
@@ -957,7 +1038,7 @@ public class ProductInventoryService {
 
     private InventoryApiSchemas.ProductSummary toSummary(
             String tenantId, InventoryItemResponse it, List<BatchResponse> batches, double availableQuantity,
-            Map<String, Double> sellingPrices) {
+            Map<String, Double> sellingPrices, Double orderFrequency) {
         double total = batches.isEmpty()
                 ? availableQuantity
                 : batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
@@ -990,7 +1071,8 @@ public class ProductInventoryService {
                 unitPrice != null ? "KES" : null,
                 tradeCostAvg,
                 totalValue > 0 ? totalValue : null,
-                sellingPrice);
+                sellingPrice,
+                orderFrequency);
     }
 
     private static Double weightedAverageUnitCost(List<BatchResponse> batches) {
