@@ -91,6 +91,31 @@ public class InventoryService {
         return value != null ? value : 0;
     }
 
+    // ---- Item Prices --------------------------------------------------------
+
+    /** Fetches Standard Selling price list rates for a batch of item codes, keyed by item code. */
+    public Mono<Map<String, Double>> getSellingPrices(String tenantId, List<String> itemCodes) {
+        if (itemCodes.isEmpty()) return Mono.just(Map.of());
+
+        String codes = itemCodes.stream()
+                .map(code -> "\"" + code + "\"")
+                .collect(Collectors.joining(",", "[", "]"));
+        Map<String, String> params = new HashMap<>();
+        params.put(PARAM_FIELDS, "[\"item_code\",\"price_list_rate\"]");
+        params.put(PARAM_FILTERS, "[[\"item_code\",\"in\"," + codes + "],[\"price_list\",\"=\",\"Standard Selling\"],[\"selling\",\"=\",1]]");
+
+        return router.getList(tenantId, "Item Price", params, LIST_TYPE)
+                .map(response -> response.data().stream()
+                        .filter(doc -> doc.itemCode() != null && doc.priceListRate() != null)
+                        .collect(Collectors.toMap(
+                                ErpNextDoc::itemCode,
+                                ErpNextDoc::priceListRate,
+                                (a, b) -> a)))
+                .onErrorResume(ex -> {
+                    return Mono.just(Map.of());
+                });
+    }
+
     // ---- Batches ------------------------------------------------------------
 
     public Mono<List<BatchResponse>> listBatches(String tenantId) {

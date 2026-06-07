@@ -67,6 +67,8 @@ class ProductInventoryServiceTest {
         lenient().doReturn(Mono.just(new ErpNextListResponse<>(List.<Map<String, Object>>of())))
                 .when(router).getList(anyString(), eq("Sales Invoice Item"), anyMap(),
                         any(org.springframework.core.ParameterizedTypeReference.class));
+        lenient().when(inventoryService.getSellingPrices(anyString(), anyList()))
+                .thenReturn(Mono.just(Map.of()));
     }
 
     // ---- helpers ----------------------------------------------------------------
@@ -100,6 +102,7 @@ class ProductInventoryServiceTest {
                 "Amoxicillin 500mg", "Antibiotics", "Nos", null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null,
+                null,              // priceListRate (Item Price)
                 name,
                 null, null, null,
                 null,              // item (Batch parent link)

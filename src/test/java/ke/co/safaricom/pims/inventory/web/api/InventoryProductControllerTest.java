@@ -271,6 +271,6 @@ class InventoryProductControllerTest {
                 null, "", "",
                 null, "PPB-001", null, Enums.RegulatoryStatus.approved,
                 "500mg", "Capsules", null, null, null,
-                50.0, 500.0, null, 100.0, 1000.0, "KES", 400.0, List.of(), batches, null, null);
+                50.0, 500.0, null, 100.0, 1000.0, "KES", 400.0, List.of(), batches, null, null, null);
     }
 }

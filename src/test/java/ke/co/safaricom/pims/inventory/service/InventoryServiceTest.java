@@ -144,4 +144,44 @@ class InventoryServiceTest {
 
         verify(mapper).toAdjustmentResponse(argThat(doc -> doc.docstatus() != null && doc.docstatus() == 1));
     }
+
+    private static ErpNextDoc itemPriceDoc(String itemCode, Double rate) {
+        Map<String, Object> fields = new HashMap<>();
+        fields.put("item_code", itemCode);
+        fields.put("price_list_rate", rate);
+        return MAPPER.convertValue(fields, ErpNextDoc.class);
+    }
+
+    @Test
+    void getSellingPrices_returns_price_keyed_by_item_code() {
+        when(router.getList(eq(TENANT), eq("Item Price"), anyMap(), eq(LIST_TYPE)))
+                .thenReturn(Mono.just(new ErpNextListResponse<>(List.of(
+                        itemPriceDoc("PIMS-ITEM-001", 150.0),
+                        itemPriceDoc("PIMS-ITEM-002", 200.0)))));
+
+        StepVerifier.create(service.getSellingPrices(TENANT, List.of("PIMS-ITEM-001", "PIMS-ITEM-002")))
+                .assertNext(prices -> assertThat(prices)
+                        .containsEntry("PIMS-ITEM-001", 150.0)
+                        .containsEntry("PIMS-ITEM-002", 200.0))
+                .verifyComplete();
+    }
+
+    @Test
+    void getSellingPrices_returns_empty_map_without_querying_when_no_item_codes() {
+        StepVerifier.create(service.getSellingPrices(TENANT, List.of()))
+                .assertNext(prices -> assertThat(prices).isEmpty())
+                .verifyComplete();
+
+        verifyNoInteractions(router);
+    }
+
+    @Test
+    void getSellingPrices_falls_back_to_empty_map_on_erpnext_error() {
+        when(router.getList(eq(TENANT), eq("Item Price"), anyMap(), eq(LIST_TYPE)))
+                .thenReturn(Mono.error(new RuntimeException("ERPNext unavailable")));
+
+        StepVerifier.create(service.getSellingPrices(TENANT, List.of("PIMS-ITEM-001")))
+                .assertNext(prices -> assertThat(prices).isEmpty())
+                .verifyComplete();
+    }
 }

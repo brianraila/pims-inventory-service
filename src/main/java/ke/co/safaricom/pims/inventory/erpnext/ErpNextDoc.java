@@ -47,6 +47,9 @@ public record ErpNextDoc(
         @JsonProperty("custom_pims_photosensitive_shelf_life_months") Integer customPimsPhotosensitiveShelfLifeMonths,
         @JsonProperty("custom_pims_generic_name") String customPimsGenericName,
 
+        // --- Item Price ---
+        @JsonProperty("price_list_rate") Double priceListRate,
+
         // --- Bin (current stock per warehouse) ---
         @JsonProperty("item_code") String itemCode,
         @JsonProperty("warehouse") String warehouse,
@@ -60,8 +63,8 @@ public record ErpNextDoc(
         @JsonProperty("manufacturing_date") String manufacturingDate,
         @JsonProperty("supplier") String supplier,
         @JsonProperty("batch_qty") Double batchQty,
-        @JsonProperty("custom_pims_unit_cost") Double customPimsUnitCost,
-        @JsonProperty("custom_pims_trade_cost") Double customPimsTradeCost,
+        @JsonProperty("pims_unit_cost") Double customPimsUnitCost,
+        @JsonProperty("pims_trade_cost") Double customPimsTradeCost,
 
         // --- Supplier ---
         @JsonProperty("supplier_name") String supplierName,
