@@ -110,11 +110,15 @@ public class ProductInventoryService {
                     List<InventoryItemResponse> items = tuple.getT1();
                     List<BatchResponse> batches = tuple.getT2();
                     List<String> itemCodes = items.stream().map(InventoryItemResponse::id).toList();
-                    return inventoryService.getStockLevels(tenantId, itemCodes, inventoryService.defaultWarehouse())
-                            .zipWith(fetchOrderFrequency(tenantId, sort))
+                    return Mono.zip(
+                            inventoryService.getStockLevels(tenantId, itemCodes, inventoryService.defaultWarehouse()),
+                            fetchOrderFrequency(tenantId, sort),
+                            inventoryService.getSellingPrices(tenantId, itemCodes)
+                                    .onErrorReturn(Map.of()))
                             .map(stockTuple -> {
                                 Map<String, Double> stockLevels = stockTuple.getT1();
                                 Map<String, Double> orderFreq  = stockTuple.getT2();
+                                Map<String, Double> sellingPrices = stockTuple.getT3();
 
                                 Map<String, List<BatchResponse>> byItem =
                                         batches.stream().collect(Collectors.groupingBy(BatchResponse::productId));
@@ -132,7 +136,7 @@ public class ProductInventoryService {
                                     List<BatchResponse> itemBatches = byItem.getOrDefault(it.id(), List.of());
                                     Map<String, Object> ex = mergedExtras(it);
                                     double available = stockLevels.getOrDefault(it.id(), 0.0);
-                                    InventoryApiSchemas.ProductSummary p = toSummary(tenantId, it, itemBatches, available);
+                                    InventoryApiSchemas.ProductSummary p = toSummary(tenantId, it, itemBatches, available, sellingPrices);
                                     if (!matchesSearch(p, search, ex)) continue;
                                     if (category != null && !category.isBlank()
                                             && (p.category() == null || !p.category().equalsIgnoreCase(category))) continue;
@@ -408,7 +412,11 @@ public class ProductInventoryService {
                             batches.stream().map(b -> toApiBatch(tenantId, item.id(), b)).toList();
                     InventoryApiSchemas.BatchListResponse bl = new InventoryApiSchemas.BatchListResponse(apiBatches, pg);
                     return inventoryService.getStockLevels(tenantId, List.of(item.id()), inventoryService.defaultWarehouse())
-                            .map(stockLevels -> buildDetail(tenantId, item, batches, bl, stockLevels.getOrDefault(item.id(), 0.0)));
+                            .zipWith(inventoryService.getSellingPrices(tenantId, List.of(item.id()))
+                                    .onErrorReturn(Map.of()))
+                            .map(stockAndPrice -> buildDetail(tenantId, item, batches, bl,
+                                    stockAndPrice.getT1().getOrDefault(item.id(), 0.0),
+                                    stockAndPrice.getT2().getOrDefault(item.id(), null)));
                 });
     }
 
@@ -908,7 +916,8 @@ public class ProductInventoryService {
     }
 
     private InventoryApiSchemas.ProductSummary toSummary(
-            String tenantId, InventoryItemResponse it, List<BatchResponse> batches, double availableQuantity) {
+            String tenantId, InventoryItemResponse it, List<BatchResponse> batches, double availableQuantity,
+            Map<String, Double> sellingPrices) {
         double total = batches.isEmpty()
                 ? availableQuantity
                 : batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
@@ -921,6 +930,7 @@ public class ProductInventoryService {
         Double tradeCostAvg = weightedAverageTradeCost(batches);
         double totalValue = batches.stream().filter(ProductInventoryService::isUsable)
                 .mapToDouble(b -> b.quantity() * b.cost()).sum();
+        Double sellingPrice = sellingPrices.getOrDefault(it.id(), null);
         return new InventoryApiSchemas.ProductSummary(
                 StableEntityIds.itemId(tenantId, it.id()),
                 it.name(),
@@ -937,7 +947,8 @@ public class ProductInventoryService {
                 unitPrice,
                 unitPrice != null ? "KES" : null,
                 tradeCostAvg,
-                totalValue > 0 ? totalValue : null);
+                totalValue > 0 ? totalValue : null,
+                sellingPrice);
     }
 
     private static Double weightedAverageUnitCost(List<BatchResponse> batches) {
@@ -968,7 +979,7 @@ public class ProductInventoryService {
 
     private InventoryApiSchemas.ProductDetail buildDetail(
             String tenantId, InventoryItemResponse it, List<BatchResponse> batches,
-            InventoryApiSchemas.BatchListResponse batchList, double availableQuantity) {
+            InventoryApiSchemas.BatchListResponse batchList, double availableQuantity, Double sellingPrice) {
         double total = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
         String cat = ex.containsKey("category")
@@ -1032,7 +1043,8 @@ public class ProductInventoryService {
                 alerts,
                 batchList,
                 unitPrice,
-                tradeCostAvg);
+                tradeCostAvg,
+                sellingPrice);
     }
 
     private static String str(Object o) {
