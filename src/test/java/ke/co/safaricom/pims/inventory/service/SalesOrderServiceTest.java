@@ -51,13 +51,15 @@ class SalesOrderServiceTest {
     private ErpNextTenantRouter router;
     @Mock
     private InventoryService inventoryService;
+    @Mock
+    private TaxConfigService taxConfigService;
 
     private SalesOrderService service;
 
     @BeforeEach
     void setUp() {
         ErpNextProperties properties = new ErpNextProperties(null, null, null, null, null, WAREHOUSE, null, null);
-        service = new SalesOrderService(router, inventoryService, properties);
+        service = new SalesOrderService(router, inventoryService, properties, taxConfigService);
     }
 
     // ---- helpers ------------------------------------------------------------
@@ -113,6 +115,7 @@ class SalesOrderServiceTest {
         when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(item())));
         when(inventoryService.getStockLevels(eq(TENANT), anyList(), eq(WAREHOUSE)))
                 .thenReturn(Mono.just(Map.of(ITEM_CODE, 100.0)));
+        when(taxConfigService.getDefaultTaxTemplateName(TENANT)).thenReturn(Mono.empty());
         when(router.create(eq(TENANT), eq("Sales Invoice"), anyMap(), eq(SINGLE_TYPE)))
                 .thenReturn(Mono.just(new ErpNextSingleResponse<>(invoiceDoc(0, 1000.0))));
 

@@ -13,6 +13,8 @@ import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
 import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
 import ke.co.safaricom.pims.inventory.web.model.SalesOrderSchemas;
 import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -26,6 +28,8 @@ import java.util.Map;
 
 @Service
 public class SalesOrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(SalesOrderService.class);
 
     // ---- ERPNext doctype & defaults ------------------------------------------
     private static final String DOCTYPE       = "Sales Invoice";
@@ -53,13 +57,16 @@ public class SalesOrderService {
     private final ErpNextTenantRouter router;
     private final InventoryService inventoryService;
     private final ErpNextProperties properties;
+    private final TaxConfigService taxConfigService;
 
     public SalesOrderService(ErpNextTenantRouter router,
                               InventoryService inventoryService,
-                              ErpNextProperties properties) {
+                              ErpNextProperties properties,
+                              TaxConfigService taxConfigService) {
         this.router = router;
         this.inventoryService = inventoryService;
         this.properties = properties;
+        this.taxConfigService = taxConfigService;
     }
 
     // ---- Create draft -------------------------------------------------------
@@ -70,8 +77,8 @@ public class SalesOrderService {
             List<Map<String, Object>> erpItems = resolveLineItems(tenantId, req.items(), allItems);
             return ensureStockAvailable(tenantId, erpItems).then(Mono.defer(() -> {
                 String customer = resolveCustomer(req.customerName());
-                Map<String, Object> body = buildInvoiceBody(customer, erpItems, req.prescriptionId(), 0);
-                return router.create(tenantId, DOCTYPE, body, SINGLE_TYPE)
+                return buildInvoiceBodyWithTax(tenantId, customer, erpItems, req.prescriptionId(), 0)
+                        .flatMap(body -> router.create(tenantId, DOCTYPE, body, SINGLE_TYPE))
                         .map(resp -> toOrderResponse(resp.data(), erpItems));
             }));
         });
@@ -238,6 +245,36 @@ public class SalesOrderService {
         return body;
     }
 
+    /**
+     * Builds the invoice body and, if a default tax template is configured for the tenant,
+     * adds {@code taxes_and_charges} and {@code company} to the payload so ERPNext applies tax
+     * automatically via its server-side validate hook.
+     * Gracefully falls back to the plain body when no default template is found.
+     */
+    private Mono<Map<String, Object>> buildInvoiceBodyWithTax(
+            String tenantId, String customer, List<Map<String, Object>> items,
+            String prescriptionId, int docstatus) {
+        Map<String, Object> base = buildInvoiceBody(customer, items, prescriptionId, docstatus);
+        return taxConfigService.getDefaultTaxTemplateName(tenantId)
+                .map(info -> {
+                    base.put("taxes_and_charges", info.name());
+                    base.put("company",           info.company());
+                    if (info.taxes() != null && !info.taxes().isEmpty()) {
+                        base.put("taxes", info.taxes());
+                    }
+                    return base;
+                })
+                .switchIfEmpty(Mono.fromSupplier(() -> {
+                    log.debug("No default tax template for tenant {}; creating invoice without tax", tenantId);
+                    return base;
+                }))
+                .onErrorResume(ex -> {
+                    log.warn("Tax template lookup failed for tenant {}: {}. Creating invoice without tax.",
+                            tenantId, ex.getMessage());
+                    return Mono.just(base);
+                });
+    }
+
     /** Builds the minimal PUT body needed to update a draft without changing its core fields. */
     private Map<String, Object> buildDraftBody(ErpNextDoc doc, String orderId, List<Map<String, Object>> items) {
         Map<String, Object> body = new HashMap<>();
@@ -249,6 +286,15 @@ public class SalesOrderService {
         body.put(F_UPDATE_STOCK, 1);
         body.put(F_IS_POS,       0);
         if (items != null) body.put(F_ITEMS, items);
+        if (StringUtils.hasText(doc.taxesAndCharges())) {
+            body.put("taxes_and_charges", doc.taxesAndCharges());
+        }
+        if (StringUtils.hasText(doc.company())) {
+            body.put("company", doc.company());
+        }
+        if (doc.taxes() != null && !doc.taxes().isEmpty()) {
+            body.put("taxes", taxConfigService.toInvoiceTaxRows(doc.taxes()));
+        }
         return body;
     }
 

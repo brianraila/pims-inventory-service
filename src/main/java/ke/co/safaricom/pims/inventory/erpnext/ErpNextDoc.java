@@ -16,13 +16,15 @@ public record ErpNextDoc(
         @JsonProperty("creation") String creation,
         @JsonProperty("modified") String modified,
         @JsonProperty("docstatus") Integer docstatus,
+        @JsonProperty("title") String taxTemplateTitle,
+        @JsonProperty("is_default") Integer isDefault,
+        @JsonProperty("disabled") Integer disabled,
 
         // --- Item ---
         @JsonProperty("item_name") String itemName,
         @JsonProperty("item_group") String itemGroup,
         @JsonProperty("stock_uom") String stockUom,
         @JsonProperty("description") String description,
-        @JsonProperty("disabled") Integer disabled,
         @JsonProperty("is_stock_item") Integer isStockItem,
         @JsonProperty("reorder_levels") java.util.List<java.util.Map<String, Object>> reorderLevels,
 
@@ -92,6 +94,11 @@ public record ErpNextDoc(
         @JsonProperty("schedule_date") String scheduleDate,
         @JsonProperty("grand_total") Double grandTotal,
         @JsonProperty("items_count") Integer itemsCount,
+
+        // --- Sales Invoice / Tax Template ---
+        @JsonProperty("company") String company,
+        @JsonProperty("taxes_and_charges") String taxesAndCharges,
+        @JsonProperty("taxes") java.util.List<java.util.Map<String, Object>> taxes,
 
         // --- Sales Invoice ---
         @JsonProperty("customer") String customer,

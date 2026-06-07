@@ -16,7 +16,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.util.UriUtils;
 import reactor.core.publisher.Mono;
+
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Low-level reactive HTTP client for ERPNext REST API calls.
@@ -44,7 +48,7 @@ public class ErpNextClient {
 
         return webClient.mutate().baseUrl(baseUrl).build()
                 .get()
-                .uri(uriBuilder -> uriBuilder.path(path).queryParams(params).build())
+                .uri(resolveUri(baseUrl, path, params))
                 .headers(h -> h.addAll(requestHeaders))
                 .retrieve()
                 .bodyToMono(responseType)
@@ -60,7 +64,7 @@ public class ErpNextClient {
 
         return webClient.mutate().baseUrl(baseUrl).build()
                 .get()
-                .uri(uriBuilder -> uriBuilder.path(path).queryParams(params).build())
+                .uri(resolveUri(baseUrl, path, params))
                 .headers(h -> h.addAll(requestHeaders))
                 .retrieve()
                 .bodyToMono(responseType)
@@ -76,7 +80,7 @@ public class ErpNextClient {
 
         return webClient.mutate().baseUrl(baseUrl).build()
                 .post()
-                .uri(uriBuilder -> uriBuilder.path(path).build())
+                .uri(resolveUri(baseUrl, path, null))
                 .headers(h -> h.addAll(requestHeaders))
                 .bodyValue(body)
                 .retrieve()
@@ -93,7 +97,7 @@ public class ErpNextClient {
 
         return webClient.mutate().baseUrl(baseUrl).build()
                 .post()
-                .uri(uriBuilder -> uriBuilder.path(path).build())
+                .uri(resolveUri(baseUrl, path, null))
                 .headers(h -> h.addAll(requestHeaders))
                 .bodyValue(body)
                 .retrieve()
@@ -110,7 +114,7 @@ public class ErpNextClient {
 
         return webClient.mutate().baseUrl(baseUrl).build()
                 .put()
-                .uri(uriBuilder -> uriBuilder.path(path).build())
+                .uri(resolveUri(baseUrl, path, null))
                 .headers(h -> h.addAll(requestHeaders))
                 .bodyValue(body)
                 .retrieve()
@@ -127,7 +131,7 @@ public class ErpNextClient {
 
         return webClient.mutate().baseUrl(baseUrl).build()
                 .put()
-                .uri(uriBuilder -> uriBuilder.path(path).build())
+                .uri(resolveUri(baseUrl, path, null))
                 .headers(h -> h.addAll(requestHeaders))
                 .bodyValue(body)
                 .retrieve()
@@ -138,11 +142,28 @@ public class ErpNextClient {
     public Mono<Void> delete(String baseUrl, HttpHeaders requestHeaders, String path) {
         return webClient.mutate().baseUrl(baseUrl).build()
                 .delete()
-                .uri(uriBuilder -> uriBuilder.path(path).build())
+                .uri(resolveUri(baseUrl, path, null))
                 .headers(h -> h.addAll(requestHeaders))
                 .retrieve()
                 .bodyToMono(Void.class)
                 .onErrorMap(WebClientResponseException.class, this::mapHttpError);
+    }
+
+    private URI resolveUri(String baseUrl, String path, MultiValueMap<String, String> queryParams) {
+        String normalizedBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        if (queryParams == null || queryParams.isEmpty()) {
+            return URI.create(normalizedBase + path);
+        }
+        StringBuilder query = new StringBuilder();
+        queryParams.forEach((key, values) -> values.forEach(value -> {
+            if (!query.isEmpty()) {
+                query.append('&');
+            }
+            query.append(UriUtils.encodeQueryParam(key, StandardCharsets.UTF_8))
+                    .append('=')
+                    .append(UriUtils.encodeQueryParam(value, StandardCharsets.UTF_8));
+        }));
+        return URI.create(normalizedBase + path + '?' + query);
     }
 
     private Throwable mapHttpError(WebClientResponseException ex) {
