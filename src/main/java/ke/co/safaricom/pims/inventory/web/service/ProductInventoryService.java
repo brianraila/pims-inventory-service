@@ -669,8 +669,8 @@ public class ProductInventoryService {
         batchBody.put("item", itemCode);
         batchBody.put("expiry_date", b.expiryDate());
         batchBody.put("supplier", b.supplier());
-        if (b.unitCost() != null) batchBody.put("custom_pims_unit_cost", b.unitCost());
-        if (b.tradeCost() != null) batchBody.put("custom_pims_trade_cost", b.tradeCost());
+        if (b.unitCost() != null) batchBody.put("pims_unit_cost", b.unitCost());
+        if (b.tradeCost() != null) batchBody.put("pims_trade_cost", b.tradeCost());
         Mono<Void> createBatch = router.create(tenantId, "Batch", batchBody, SINGLE_TYPE).then();
         if (b.quantity() == null || b.quantity() <= 0) {
             return createBatch;
@@ -998,6 +998,8 @@ public class ProductInventoryService {
         double maxVal = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(b -> b.quantity() * b.cost()).sum();
         double curr = total;
         double reorderQty = Math.max(0, maxStock - curr);
+        Double unitPrice = weightedAverageUnitCost(batches);
+        Double tradeCostAvg = weightedAverageTradeCost(batches);
         return new InventoryApiSchemas.ProductDetail(
                 StableEntityIds.itemId(tenantId, it.id()),
                 it.name(),
@@ -1028,7 +1030,9 @@ public class ProductInventoryService {
                 "KES",
                 reorderQty,
                 alerts,
-                batchList);
+                batchList,
+                unitPrice,
+                tradeCostAvg);
     }
 
     private static String str(Object o) {

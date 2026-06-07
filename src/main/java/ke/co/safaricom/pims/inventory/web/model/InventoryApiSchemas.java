@@ -130,7 +130,9 @@ public final class InventoryApiSchemas {
             String currency,
             Double reorderQuantity,
             List<StockAlert> alerts,
-            BatchListResponse batches) {}
+            BatchListResponse batches,
+            Double unitPrice,
+            Double tradeCost) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)

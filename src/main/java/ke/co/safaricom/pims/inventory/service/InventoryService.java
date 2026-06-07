@@ -34,7 +34,7 @@ public class InventoryService {
     private static final String BATCH_FIELDS =
             "[\"name\",\"batch_id\",\"item\",\"expiry_date\",\"manufacturing_date\"," +
             "\"supplier\",\"disabled\",\"batch_qty\"," +
-            "\"custom_pims_unit_cost\",\"custom_pims_trade_cost\"]";
+            "\"pims_unit_cost\",\"pims_trade_cost\"]";
     private static final String STOCK_ENTRY_FIELDS =
             "[\"name\",\"purpose\",\"posting_date\",\"remarks\",\"from_warehouse\",\"to_warehouse\",\"owner\",\"docstatus\"]";
 
