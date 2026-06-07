@@ -12,6 +12,12 @@ public final class ItemExtrasCodec {
     private static final String PREFIX = "<<<PIMS_ITEM_EXTRAS>>>";
     private static final String SUFFIX = "<<<END_PIMS_ITEM_EXTRAS>>>";
 
+    private static final String LEGACY_DELIM_HTML = "&lt;&lt;&gt;&gt;";
+    private static final String LEGACY_DELIM_RAW  = "<<>>";
+
+    private static final String KEY_GENERIC_NAME       = "generic_name";
+    private static final String KEY_SPECIAL_REQUIREMENTS = "special_requirements";
+
     private ItemExtrasCodec() {}
 
     public static String embed(String baseDescription, InventoryApiSchemas.CreateProductRequest r) {
@@ -23,7 +29,7 @@ public final class ItemExtrasCodec {
         Map<String, Object> map = parse(currentDescription);
         if (u.productName() != null) {
             /* item_name updated separately */ }
-        if (u.genericName() != null) map.put("generic_name", u.genericName());
+        if (u.genericName() != null) map.put(KEY_GENERIC_NAME, u.genericName());
         if (u.manufacturerId() != null) map.put("manufacturer_id", u.manufacturerId().toString());
         if (u.category() != null) map.put("category", u.category());
         if (u.ppbCode() != null) map.put("ppb_code", u.ppbCode());
@@ -35,7 +41,7 @@ public final class ItemExtrasCodec {
         if (u.unitOfMeasure() != null) map.put("unit_of_measure", u.unitOfMeasure().jsonName());
         if (u.reorderLevel() != null) map.put("reorder_level", u.reorderLevel());
         if (u.maximumStock() != null) map.put("maximum_stock", u.maximumStock());
-        if (u.specialRequirements() != null) map.put("special_requirements", u.specialRequirements());
+        if (u.specialRequirements() != null) map.put(KEY_SPECIAL_REQUIREMENTS, u.specialRequirements());
         String stripped = strip(currentDescription);
         return stripped + "\n" + PREFIX + map.toString().replace('=', ':') + SUFFIX;
     }
@@ -43,7 +49,7 @@ public final class ItemExtrasCodec {
     /** Minimal JSON-ish serialisation avoiding extra deps (map toString suffices for controlled keys). */
     private static String toMap(InventoryApiSchemas.CreateProductRequest r) {
         Map<String, Object> m = new HashMap<>();
-        if (r.genericName() != null) m.put("generic_name", r.genericName());
+        if (r.genericName() != null) m.put(KEY_GENERIC_NAME, r.genericName());
         if (r.manufacturerId() != null) m.put("manufacturer_id", r.manufacturerId().toString());
         if (r.category() != null) m.put("category", r.category());
         if (r.ppbCode() != null) m.put("ppb_code", r.ppbCode());
@@ -57,40 +63,55 @@ public final class ItemExtrasCodec {
         if (r.unitOfMeasure() != null) m.put("unit_of_measure", r.unitOfMeasure().jsonName());
         if (r.reorderLevel() != null) m.put("reorder_level", r.reorderLevel());
         if (r.maximumStock() != null) m.put("maximum_stock", r.maximumStock());
-        if (r.specialRequirements() != null) m.put("special_requirements", r.specialRequirements());
+        if (r.specialRequirements() != null) m.put(KEY_SPECIAL_REQUIREMENTS, r.specialRequirements());
         return m.toString().replace('=', ':');
     }
 
     public static Map<String, Object> parse(String description) {
         if (description == null) return new HashMap<>();
+        // Try new format first
         int start = description.indexOf(PREFIX);
         int end = description.indexOf(SUFFIX);
-        if (start < 0 || end < start) return new HashMap<>();
-        String inner = description.substring(start + PREFIX.length(), end).trim();
-        return parseLooseMap(inner);
+        if (start >= 0 && end > start) {
+            return parseLooseMap(description.substring(start + PREFIX.length(), end).trim());
+        }
+        return parseLegacy(description, LEGACY_DELIM_HTML, LEGACY_DELIM_RAW);
+    }
+
+    private static Map<String, Object> parseLegacy(String description, String... delims) {
+        for (String delim : delims) {
+            int first = description.indexOf(delim);
+            if (first >= 0) {
+                int second = description.indexOf(delim, first + delim.length());
+                if (second >= 0) {
+                    return parseLooseMap(description.substring(first + delim.length(), second).trim());
+                }
+            }
+        }
+        return new HashMap<>();
     }
 
     public static String strip(String description) {
         if (description == null) return "";
         int start = description.indexOf(PREFIX);
-        if (start < 0) return description.trim();
-        return description.substring(0, start).trim();
+        if (start >= 0) return description.substring(0, start).trim();
+        // Strip legacy format
+        for (String delim : new String[]{LEGACY_DELIM_HTML, LEGACY_DELIM_RAW}) {
+            int first = description.indexOf(delim);
+            if (first >= 0) return description.substring(0, first).trim();
+        }
+        return description.trim();
     }
 
-    /** Prefer merged extras generic_name; fall back to human-readable text outside the PMIS fragment. */
+    /** Prefer merged extras generic_name; fall back to parsed fragment. Returns null when not found. */
     public static String displayGenericName(String rawDescription, Map<String, Object> mergedExtras) {
         if (mergedExtras != null) {
-            Object g = mergedExtras.get("generic_name");
-            if (g != null && !String.valueOf(g).isBlank()) {
-                return String.valueOf(g);
-            }
+            Object g = mergedExtras.get(KEY_GENERIC_NAME);
+            if (g != null && !String.valueOf(g).isBlank()) return String.valueOf(g);
         }
-        Map<String, Object> fromFrag = parse(rawDescription);
-        Object g2 = fromFrag.get("generic_name");
-        if (g2 != null && !String.valueOf(g2).isBlank()) {
-            return String.valueOf(g2);
-        }
-        return strip(rawDescription);
+        Object g2 = parse(rawDescription).get(KEY_GENERIC_NAME);
+        if (g2 != null && !String.valueOf(g2).isBlank()) return String.valueOf(g2);
+        return null;
     }
 
     private static Map<String, Object> parseLooseMap(String inner) {
@@ -117,7 +138,7 @@ public final class ItemExtrasCodec {
     }
 
     public static InventoryApiSchemas.SpecialRequirements specials(Map<String, Object> extras) {
-        Object sr = extras.get("special_requirements");
+        Object sr = extras.get(KEY_SPECIAL_REQUIREMENTS);
         if (sr instanceof Map<?, ?> mm) {
             Boolean cs = mm.get("controlled_substance") instanceof Boolean b ? b : null;
             return new InventoryApiSchemas.SpecialRequirements(cs, str(mm.get("controlled_substance_schedule")),
