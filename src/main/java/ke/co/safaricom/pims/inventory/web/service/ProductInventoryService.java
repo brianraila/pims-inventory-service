@@ -5,9 +5,12 @@ import ke.co.safaricom.pims.inventory.api.dto.CreateStockAdjustmentRequest;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.api.dto.StockAdjustmentResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
@@ -29,10 +32,26 @@ import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
 public class ProductInventoryService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ProductInventoryService.class);
+
+    /** TTL for the per-tenant order-frequency cache (5 minutes). */
+    private static final long ORDER_FREQ_TTL_MS = 5 * 60 * 1_000L;
+
+    private static final ParameterizedTypeReference<ErpNextListResponse<Map<String, Object>>> LIST_MAP_TYPE =
+            new ParameterizedTypeReference<>() {};
+
+    /** Per-instance cache: tenantId → aggregated Sales Invoice Item qty per item_code. */
+    private final Map<String, CacheEntry> orderFreqCache = new ConcurrentHashMap<>();
+
+    private record CacheEntry(Map<String, Double> data, long expiresAt) {
+        boolean isAlive() { return System.currentTimeMillis() < expiresAt; }
+    }
 
     private final ErpNextTenantRouter router;
     private final InventoryMapper inventoryMapper;
@@ -64,6 +83,18 @@ public class ProductInventoryService {
     private static final ParameterizedTypeReference<ErpNextMessageResponse<ErpNextDoc>> SUBMIT_TYPE =
             new ParameterizedTypeReference<>() {};
 
+    /**
+     * Lists products with optional filtering, sorted by most-ordered (default) or alphabetically.
+     *
+     * <p>{@code sort="most_ordered"} (default) — items with the highest total submitted Sales
+     * Invoice qty appear first; items with no sales history come last, sorted alphabetically
+     * among themselves. Order frequency is fetched from ERPNext's {@code Sales Invoice Item}
+     * child doctype and cached per-tenant for {@value #ORDER_FREQ_TTL_MS} ms. If the ERPNext
+     * call fails, the sort falls back to alphabetical automatically.
+     *
+     * <p>{@code sort="alphabetical"} — skips the ERPNext call entirely and sorts by product
+     * name only.
+     */
     public Mono<InventoryApiSchemas.ProductListResponse> listProducts(
             String tenantId,
             int page,
@@ -71,7 +102,8 @@ public class ProductInventoryService {
             String search,
             String category,
             Enums.ProductStatus statusFilter,
-            UUID manufacturerIdFilter) {
+            UUID manufacturerIdFilter,
+            String sort) {
         return listItemsEnriched(tenantId)
                 .zipWith(inventoryService.listBatches(tenantId))
                 .flatMap(tuple -> {
@@ -79,9 +111,21 @@ public class ProductInventoryService {
                     List<BatchResponse> batches = tuple.getT2();
                     List<String> itemCodes = items.stream().map(InventoryItemResponse::id).toList();
                     return inventoryService.getStockLevels(tenantId, itemCodes, inventoryService.defaultWarehouse())
-                            .map(stockLevels -> {
+                            .zipWith(fetchOrderFrequency(tenantId, sort))
+                            .map(stockTuple -> {
+                                Map<String, Double> stockLevels = stockTuple.getT1();
+                                Map<String, Double> orderFreq  = stockTuple.getT2();
+
                                 Map<String, List<BatchResponse>> byItem =
                                         batches.stream().collect(Collectors.groupingBy(BatchResponse::productId));
+
+                                // Pre-compute UUID→frequency for the sort comparator
+                                Map<UUID, Double> orderFreqByUuid = new HashMap<>();
+                                for (InventoryItemResponse it : items) {
+                                    orderFreqByUuid.put(
+                                            StableEntityIds.itemId(tenantId, it.id()),
+                                            orderFreq.getOrDefault(it.id(), 0.0));
+                                }
 
                                 List<InventoryApiSchemas.ProductSummary> rows = new ArrayList<>();
                                 for (InventoryItemResponse it : items) {
@@ -105,7 +149,7 @@ public class ProductInventoryService {
                                     rows.add(p);
                                 }
 
-                                rows.sort(Comparator.comparing(InventoryApiSchemas.ProductSummary::productName, String.CASE_INSENSITIVE_ORDER));
+                                sortProductRows(rows, orderFreqByUuid);
                                 long total = rows.size();
                                 int safeLimit = clampLimit(limit);
                                 int pg = normalizePage(page);
@@ -117,6 +161,73 @@ public class ProductInventoryService {
                                         new InventoryApiSchemas.ProductListSummary(total, (long) batches.size()));
                             });
                 });
+    }
+
+    /**
+     * Fetches per-item total ordered qty from submitted {@code Sales Invoice Item} records,
+     * aggregated by {@code item_code}. Results are cached per tenant with a 5-minute TTL.
+     *
+     * <p>Returns an empty map (triggering alphabetical fallback) when:
+     * <ul>
+     *   <li>{@code sort} equals {@code "alphabetical"} (ERPNext call skipped entirely), or</li>
+     *   <li>the ERPNext call fails for any reason (warning is logged).</li>
+     * </ul>
+     */
+    private Mono<Map<String, Double>> fetchOrderFrequency(String tenantId, String sort) {
+        if ("alphabetical".equalsIgnoreCase(sort)) {
+            return Mono.just(Map.of());
+        }
+        CacheEntry cached = orderFreqCache.get(tenantId);
+        if (cached != null && cached.isAlive()) {
+            return Mono.just(cached.data());
+        }
+        Map<String, String> params = new HashMap<>();
+        params.put("fields", "[\"item_code\",\"qty\"]");
+        params.put("filters", "[[\"docstatus\",\"=\",1]]");
+        params.put("limit_page_length", "500");
+        return router.getList(tenantId, "Sales Invoice Item", params, LIST_MAP_TYPE)
+                .map(resp -> {
+                    Map<String, Double> freq = new HashMap<>();
+                    for (Map<String, Object> row : resp.data()) {
+                        String code = Objects.toString(row.get("item_code"), null);
+                        if (code == null || code.isBlank()) continue;
+                        freq.merge(code, toDoubleOrZero(row.get("qty")), (a, b) -> a + b);
+                    }
+                    Map<String, Double> snapshot = Map.copyOf(freq);
+                    orderFreqCache.put(tenantId,
+                            new CacheEntry(snapshot, System.currentTimeMillis() + ORDER_FREQ_TTL_MS));
+                    return snapshot;
+                })
+                .onErrorResume(ex -> {
+                    logger.warn("Could not fetch Sales Invoice Items for order-frequency sort; " +
+                            "falling back to alphabetical. Reason: {}", ex.getMessage());
+                    return Mono.just(Map.of());
+                });
+    }
+
+    /**
+     * Sorts rows by order frequency (descending), then alphabetically by product name for ties
+     * and zero-frequency items. Falls back to purely alphabetical when {@code orderFreqByUuid}
+     * is empty (i.e., no Sales Invoice data was available).
+     */
+    private static void sortProductRows(
+            List<InventoryApiSchemas.ProductSummary> rows, Map<UUID, Double> orderFreqByUuid) {
+        if (orderFreqByUuid.isEmpty() || orderFreqByUuid.values().stream().allMatch(v -> v == 0.0)) {
+            rows.sort(Comparator.comparing(
+                    InventoryApiSchemas.ProductSummary::productName, String.CASE_INSENSITIVE_ORDER));
+            return;
+        }
+        rows.sort(Comparator
+                .<InventoryApiSchemas.ProductSummary, Double>comparing(
+                        p -> orderFreqByUuid.getOrDefault(p.id(), 0.0),
+                        Comparator.reverseOrder())
+                .thenComparing(InventoryApiSchemas.ProductSummary::productName, String.CASE_INSENSITIVE_ORDER));
+    }
+
+    private static double toDoubleOrZero(Object o) {
+        if (o instanceof Number n) return n.doubleValue();
+        if (o == null) return 0;
+        try { return Double.parseDouble(o.toString()); } catch (NumberFormatException e) { return 0; }
     }
 
     private static Map<String, Object> mergedExtras(InventoryItemResponse it) {
@@ -558,6 +669,8 @@ public class ProductInventoryService {
         batchBody.put("item", itemCode);
         batchBody.put("expiry_date", b.expiryDate());
         batchBody.put("supplier", b.supplier());
+        if (b.unitCost() != null) batchBody.put("custom_pims_unit_cost", b.unitCost());
+        if (b.tradeCost() != null) batchBody.put("custom_pims_trade_cost", b.tradeCost());
         Mono<Void> createBatch = router.create(tenantId, "Batch", batchBody, SINGLE_TYPE).then();
         if (b.quantity() == null || b.quantity() <= 0) {
             return createBatch;
@@ -608,11 +721,37 @@ public class ProductInventoryService {
         return router.getOne(tenantId, "Stock Entry", name, RAW_SINGLE_TYPE)
                 .map(ErpNextSingleResponse::data)
                 .flatMap(latest -> {
+                    allowZeroValuationRateOnZeroCostItems(latest);
                     Map<String, Object> body = new HashMap<>();
                     body.put("doc", latest);
                     return router.callMethod(tenantId, "frappe.client.submit", body, SUBMIT_TYPE);
                 })
                 .map(ErpNextMessageResponse::message);
+    }
+
+    /**
+     * ERPNext blocks submission when a line item has basic_rate=0 unless
+     * allow_zero_valuation_rate is explicitly set. This is common for items
+     * that carry no purchase cost (e.g. test data or donated stock).
+     */
+    @SuppressWarnings("unchecked")
+    private static void allowZeroValuationRateOnZeroCostItems(Map<String, Object> doc) {
+        Object itemsObj = doc.get("items");
+        if (!(itemsObj instanceof List<?> rawList)) return;
+        for (Object raw : rawList) {
+            if (!(raw instanceof Map)) continue;
+            Map<String, Object> item = (Map<String, Object>) raw;
+            Object rate = item.get("basic_rate");
+            boolean isZeroCost;
+            if (rate instanceof Number n) {
+                isZeroCost = n.doubleValue() == 0.0;
+            } else {
+                isZeroCost = true;
+            }
+            if (isZeroCost) {
+                item.put("allow_zero_valuation_rate", 1);
+            }
+        }
     }
 
     private Mono<InventoryApiSchemas.Batch> lastCreatedBatchForItem(String tenantId, String itemCode, String batchNumberGuess) {
@@ -770,13 +909,18 @@ public class ProductInventoryService {
 
     private InventoryApiSchemas.ProductSummary toSummary(
             String tenantId, InventoryItemResponse it, List<BatchResponse> batches, double availableQuantity) {
-        double total = batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
+        double total = batches.isEmpty()
+                ? availableQuantity
+                : batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
         String genericDisplay = ItemExtrasCodec.displayGenericName(it.genericName(), ex);
         Enums.UnitOfMeasure uom = Enums.UnitOfMeasure.fromItemUom(it.unit());
         String cat = resolveCategory(it, ex);
         List<Enums.ProductStatus> statuses = computeStatuses(total, it.reorderLevel(), it.isControlled(), batches);
         Double unitPrice = weightedAverageUnitCost(batches);
+        Double tradeCostAvg = weightedAverageTradeCost(batches);
+        double totalValue = batches.stream().filter(ProductInventoryService::isUsable)
+                .mapToDouble(b -> b.quantity() * b.cost()).sum();
         return new InventoryApiSchemas.ProductSummary(
                 StableEntityIds.itemId(tenantId, it.id()),
                 it.name(),
@@ -791,7 +935,9 @@ public class ProductInventoryService {
                 "",
                 "",
                 unitPrice,
-                unitPrice != null ? "KES" : null);
+                unitPrice != null ? "KES" : null,
+                tradeCostAvg,
+                totalValue > 0 ? totalValue : null);
     }
 
     private static Double weightedAverageUnitCost(List<BatchResponse> batches) {
@@ -803,6 +949,19 @@ public class ProductInventoryService {
                     : null;
         }
         double weightedSum = usable.stream().mapToDouble(b -> b.quantity() * b.cost()).sum();
+        double avg = weightedSum / totalQty;
+        return avg > 0 ? avg : null;
+    }
+
+    private static Double weightedAverageTradeCost(List<BatchResponse> batches) {
+        List<BatchResponse> usable = batches.stream().filter(ProductInventoryService::isUsable).toList();
+        double totalQty = usable.stream().mapToDouble(BatchResponse::quantity).sum();
+        if (totalQty <= 0) {
+            return usable.stream().mapToDouble(BatchResponse::tradeCost).filter(c -> c > 0).average().orElse(0) > 0
+                    ? usable.stream().mapToDouble(BatchResponse::tradeCost).filter(c -> c > 0).average().getAsDouble()
+                    : null;
+        }
+        double weightedSum = usable.stream().mapToDouble(b -> b.quantity() * b.tradeCost()).sum();
         double avg = weightedSum / totalQty;
         return avg > 0 ? avg : null;
     }
@@ -925,7 +1084,7 @@ public class ProductInventoryService {
                 b.receivedDate(),
                 b.expiryDate(),
                 b.supplier(),
-                null,
+                b.tradeCost() > 0 ? b.tradeCost() : null,
                 b.cost(),
                 b.quantity() * b.cost(),
                 "KES",

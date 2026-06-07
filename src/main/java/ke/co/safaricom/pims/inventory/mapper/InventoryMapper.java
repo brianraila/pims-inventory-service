@@ -69,7 +69,8 @@ public class InventoryMapper {
                 safeStr(doc.warehouse()),
                 null,
                 safeStr(doc.manufacturingDate()),
-                0,
+                doc.customPimsUnitCost() != null ? doc.customPimsUnitCost() : 0,
+                doc.customPimsTradeCost() != null ? doc.customPimsTradeCost() : 0,
                 safeStr(doc.supplier()),
                 null
         );

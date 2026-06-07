@@ -54,7 +54,9 @@ public final class InventoryApiSchemas {
             String createdAt,
             String updatedAt,
             Double unitPrice,
-            String currency) {}
+            String currency,
+            Double tradeCost,
+            Double totalValue) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
