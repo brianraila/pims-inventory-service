@@ -923,7 +923,9 @@ public class ProductInventoryService {
                 : batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
         Map<String, Object> ex = mergedExtras(it);
         String genericDisplay = ItemExtrasCodec.displayGenericName(it.genericName(), ex);
-        Enums.UnitOfMeasure uom = Enums.UnitOfMeasure.fromItemUom(it.unit());
+        Enums.UnitOfMeasure uom = ex.containsKey("unit_of_measure")
+                ? ItemExtrasCodec.uom(ex.get("unit_of_measure").toString())
+                : Enums.UnitOfMeasure.fromItemUom(it.unit());
         String cat = resolveCategory(it, ex);
         List<Enums.ProductStatus> statuses = computeStatuses(total, it.reorderLevel(), it.isControlled(), batches);
         Double unitPrice = weightedAverageUnitCost(batches);
