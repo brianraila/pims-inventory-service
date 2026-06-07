@@ -56,7 +56,8 @@ public final class InventoryApiSchemas {
             Double unitPrice,
             String currency,
             Double tradeCost,
-            Double totalValue) {}
+            Double totalValue,
+            Double sellingPrice) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -132,7 +133,8 @@ public final class InventoryApiSchemas {
             List<StockAlert> alerts,
             BatchListResponse batches,
             Double unitPrice,
-            Double tradeCost) {}
+            Double tradeCost,
+            Double sellingPrice) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
