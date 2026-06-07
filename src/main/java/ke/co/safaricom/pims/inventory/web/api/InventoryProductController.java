@@ -40,7 +40,9 @@ public class InventoryProductController {
     }
 
     @GetMapping
-    @Operation(summary = "List all products (paginated)")
+    @Operation(summary = "List all products (paginated)",
+            description = "Products are sorted by most-ordered (default) or alphabetically. " +
+                    "Use ?sort=alphabetical to disable order-frequency ranking.")
     public Mono<InventoryApiSchemas.ProductListResponse> list(
             Authentication authentication,
             ServerWebExchange exchange,
@@ -49,9 +51,11 @@ public class InventoryProductController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Enums.ProductStatus status,
-            @RequestParam(value = "manufacturer_id", required = false) UUID manufacturerId) {
+            @RequestParam(value = "manufacturer_id", required = false) UUID manufacturerId,
+            @RequestParam(value = "sort", defaultValue = "most_ordered") String sort) {
         return tenants.resolveTenantId(authentication, exchange)
-                .flatMap(t -> productInventoryService.listProducts(t, page, limit, search, category, status, manufacturerId));
+                .flatMap(t -> productInventoryService.listProducts(
+                        t, page, limit, search, category, status, manufacturerId, sort));
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
