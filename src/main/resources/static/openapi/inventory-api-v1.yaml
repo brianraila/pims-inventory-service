@@ -280,6 +280,10 @@ paths:
 
         **multipart/form-data** (`file` required) → response body is **`BatchBulkUploadResult`**
         (manifest of created rows + per-row failures).
+
+        **Stock integrity:** `quantity` must be greater than 0. Each successful batch creates an ERPNext
+        Batch and submits a **Material Receipt** Stock Entry to book stock into Bin at `storage_location`
+        (or the tenant default warehouse). Returns **400** when quantity is null, zero, or negative.
       parameters:
         - $ref: '#/components/parameters/ProductIdParam'
       requestBody:
@@ -322,6 +326,10 @@ paths:
     delete:
       tags: [Batches]
       operationId: removeBatch
+      summary: Remove batch and reverse stock
+      description: |
+        Deletes the ERPNext Batch record. When batch quantity is greater than 0, submits a
+        **Material Issue** Stock Entry first to reverse stock from the batch warehouse before deletion.
       parameters:
         - $ref: '#/components/parameters/ProductIdParam'
         - $ref: '#/components/parameters/BatchIdParam'

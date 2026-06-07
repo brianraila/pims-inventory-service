@@ -32,11 +32,26 @@ public class CategoryService {
     }
 
     public Mono<List<InventoryApiSchemas.Category>> listCategories(String tenantId) {
+        return listCategories(tenantId, null, null, null);
+    }
+
+    public Mono<List<InventoryApiSchemas.Category>> listCategories(
+            String tenantId, Boolean isGroup, String parentCategory, String search) {
         Map<String, String> params = new HashMap<>();
         params.put(PARAM_FIELDS, ITEM_GROUP_FIELDS);
         params.put("limit_page_length", "200");
+        // ERPNext supports like-filtering on string fields; is_group and parent_item_group
+        // are tree/boolean fields that ERPNext ignores in the filters param, so those are
+        // applied in-memory below.
+        if (StringUtils.hasText(search))
+            params.put("filters", "[[\"item_group_name\",\"like\",\"%" + search + "%\"]]");
         return router.getList(tenantId, DOCTYPE_ITEM_GROUP, params, LIST_TYPE)
-                .map(r -> r.data().stream().map(this::toCategory).toList());
+                .map(r -> r.data().stream()
+                        .map(this::toCategory)
+                        .filter(c -> isGroup == null || isGroup.equals(c.isGroup()))
+                        .filter(c -> !StringUtils.hasText(parentCategory)
+                                || parentCategory.equals(c.parentCategory()))
+                        .toList());
     }
 
     public Mono<InventoryApiSchemas.Category> getCategory(String tenantId, String id) {

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
@@ -39,9 +40,12 @@ public class InventoryCategoryController {
     @Operation(summary = "List all product categories (ERPNext Item Groups)")
     public Mono<InventoryApiSchemas.MetaListResponse<InventoryApiSchemas.Category>> list(
             Authentication authentication,
-            ServerWebExchange exchange) {
+            ServerWebExchange exchange,
+            @RequestParam(name = "is_group", required = false) Boolean isGroup,
+            @RequestParam(name = "parent_category", required = false) String parentCategory,
+            @RequestParam(required = false) String search) {
         return tenants.resolveTenantId(authentication, exchange)
-                .flatMap(categoryService::listCategories)
+                .flatMap(t -> categoryService.listCategories(t, isGroup, parentCategory, search))
                 .map(InventoryApiSchemas.MetaListResponse::new);
     }
 
