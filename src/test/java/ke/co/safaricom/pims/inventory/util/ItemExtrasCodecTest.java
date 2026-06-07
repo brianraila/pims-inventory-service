@@ -32,6 +32,7 @@ class ItemExtrasCodecTest {
                 Enums.UnitOfMeasure.capsules,
                 50.0,
                 500.0,
+                null,
                 new InventoryApiSchemas.SpecialRequirements(false, null, true, false, null),
                 null);
     }
@@ -95,7 +96,7 @@ class ItemExtrasCodecTest {
         InventoryApiSchemas.UpdateProductRequest update = new InventoryApiSchemas.UpdateProductRequest(
                 null, "UpdatedGeneric", null, null,
                 "PPB-NEW", null, null, null, null, null,
-                null, null, null, null);
+                null, null, null, null, null);
 
         String merged = ItemExtrasCodec.mergeUpdate(original, update);
         Map<String, Object> parsed = ItemExtrasCodec.parse(merged);

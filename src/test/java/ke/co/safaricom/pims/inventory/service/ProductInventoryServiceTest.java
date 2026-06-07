@@ -346,7 +346,7 @@ class ProductInventoryServiceTest {
         InventoryApiSchemas.CreateProductRequest req = new InventoryApiSchemas.CreateProductRequest(
                 "Amoxicillin 500mg", "Amoxicillin", null, "Antibiotics",
                 "PPB-001", null, null, "500mg", "Capsules", null, null, null,
-                Enums.UnitOfMeasure.capsules, 50.0, 500.0, null, null);
+                Enums.UnitOfMeasure.capsules, 50.0, 500.0, null, null, null);
 
         // Capture the randomly-generated itemCode so we can return the right item from listItems
         java.util.concurrent.atomic.AtomicReference<String> capturedCode = new java.util.concurrent.atomic.AtomicReference<>();
@@ -386,7 +386,7 @@ class ProductInventoryServiceTest {
         InventoryApiSchemas.CreateProductRequest req = new InventoryApiSchemas.CreateProductRequest(
                 "Another Drug", "Drug", null, "Antibiotics",
                 "PPB-001", null, null, null, null, null, null, null,
-                Enums.UnitOfMeasure.tablets, 10.0, 100.0, null, null);
+                Enums.UnitOfMeasure.tablets, 10.0, 100.0, null, null, null);
 
         StepVerifier.create(service.createProduct(TENANT, req))
                 .expectError(ConflictException.class)
@@ -398,7 +398,7 @@ class ProductInventoryServiceTest {
         InventoryApiSchemas.CreateProductRequest req = new InventoryApiSchemas.CreateProductRequest(
                 "", "Generic", null, "Antibiotics",
                 null, null, null, null, null, null, null, null,
-                Enums.UnitOfMeasure.tablets, 10.0, 100.0, null, null);
+                Enums.UnitOfMeasure.tablets, 10.0, 100.0, null, null, null);
 
         StepVerifier.create(Mono.defer(() -> service.createProduct(TENANT, req)))
                 .expectError(ServiceValidationException.class)
@@ -410,7 +410,7 @@ class ProductInventoryServiceTest {
         InventoryApiSchemas.CreateProductRequest req = new InventoryApiSchemas.CreateProductRequest(
                 "Drug", "Generic", null, null,
                 null, null, null, null, null, null, null, null,
-                Enums.UnitOfMeasure.tablets, 10.0, 100.0, null, null);
+                Enums.UnitOfMeasure.tablets, 10.0, 100.0, null, null, null);
 
         StepVerifier.create(Mono.defer(() -> service.createProduct(TENANT, req)))
                 .expectError(ServiceValidationException.class)
@@ -459,7 +459,7 @@ class ProductInventoryServiceTest {
 
         InventoryApiSchemas.CreateProductRequest newData = new InventoryApiSchemas.CreateProductRequest(
                 "Amoxicillin", null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         InventoryApiSchemas.ProductDraftRequest patch = new InventoryApiSchemas.ProductDraftRequest(
                 Enums.WizardStep.TWO, newData);
 
@@ -681,7 +681,7 @@ class ProductInventoryServiceTest {
                 null, "2027-01-01", "Supplier A", 100.0, null, 10.0, "Main Warehouse", null, null);
 
         StepVerifier.create(Mono.defer(() -> service.addBatchJsonReturn(TENANT, productId, req)))
-                .expectError(IllegalArgumentException.class)
+                .expectError(ServiceValidationException.class)
                 .verify();
     }
 

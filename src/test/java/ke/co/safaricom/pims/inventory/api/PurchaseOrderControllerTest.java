@@ -2,18 +2,9 @@ package ke.co.safaricom.pims.inventory.api;
 
 import ke.co.safaricom.pims.inventory.api.dto.CreatePurchaseOrderRequest;
 import ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderResponse;
-import ke.co.safaricom.pims.inventory.config.TestSecurityConfig;
-import ke.co.safaricom.pims.inventory.exception.handler.GlobalExceptionHandler;
-import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
-import ke.co.safaricom.pims.inventory.service.PurchaseOrderService;
-import org.junit.jupiter.api.BeforeEach;
+import ke.co.safaricom.pims.inventory.config.AbstractInventoryControllerTest;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -21,25 +12,9 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 
-@WebFluxTest(controllers = PurchaseOrderController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
-class PurchaseOrderControllerTest {
+class PurchaseOrderControllerTest extends AbstractInventoryControllerTest {
 
     private static final String BASE = "/api/v1/inventory/purchase-orders";
-
-    @Autowired
-    private WebTestClient client;
-
-    @MockBean
-    private PurchaseOrderService purchaseOrderService;
-
-    @MockBean
-    private TenantContextResolver tenants;
-
-    @BeforeEach
-    void setUp() {
-        when(tenants.resolveTenantId(any(), any())).thenReturn(Mono.just("t1"));
-    }
 
     // ---- GET /inventory/purchase-orders ----------------------------------------
 

@@ -1,20 +1,11 @@
 package ke.co.safaricom.pims.inventory.web.api;
 
-import ke.co.safaricom.pims.inventory.config.TestSecurityConfig;
+import ke.co.safaricom.pims.inventory.config.AbstractInventoryControllerTest;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
-import ke.co.safaricom.pims.inventory.exception.handler.GlobalExceptionHandler;
-import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
 import ke.co.safaricom.pims.inventory.web.model.Enums;
 import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
-import ke.co.safaricom.pims.inventory.web.service.ProductInventoryService;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -23,26 +14,10 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 
-@WebFluxTest(controllers = TerminologyController.class)
-@Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
-class TerminologyControllerTest {
+class TerminologyControllerTest extends AbstractInventoryControllerTest {
 
     private static final String SEARCH_BASE = "/api/v1/inventory/terminology/search";
     private static final String PRODUCT_BASE = "/api/v1/inventory/terminology/products";
-
-    @Autowired
-    private WebTestClient client;
-
-    @MockBean
-    private ProductInventoryService service;
-
-    @MockBean
-    private TenantContextResolver tenants;
-
-    @BeforeEach
-    void setUp() {
-        when(tenants.resolveTenantId(any(), any())).thenReturn(Mono.just("t1"));
-    }
 
     // ---- GET /terminology/search -----------------------------------------------
 
@@ -56,7 +31,7 @@ class TerminologyControllerTest {
                                 "Teva Pharmaceuticals", "0900-0100-01", "500mg", "Capsules")),
                         1,
                         List.of(Enums.TerminologyRecordSource.rxnorm));
-        when(service.searchTerminology(eq("Am"), isNull(), eq(Enums.TerminologySource.all), eq(10)))
+        when(productInventoryService.searchTerminology(eq("Am"), isNull(), eq(Enums.TerminologySource.all), eq(10)))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(uriBuilder -> uriBuilder.path(SEARCH_BASE)
@@ -98,7 +73,7 @@ class TerminologyControllerTest {
         UUID mfrId = UUID.randomUUID();
         InventoryApiSchemas.TerminologySearchResponse response =
                 new InventoryApiSchemas.TerminologySearchResponse(List.of(), 0, List.of());
-        when(service.searchTerminology(eq("amox"), eq(mfrId), eq(Enums.TerminologySource.rxnorm), eq(5)))
+        when(productInventoryService.searchTerminology(eq("amox"), eq(mfrId), eq(Enums.TerminologySource.rxnorm), eq(5)))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(uriBuilder -> uriBuilder.path(SEARCH_BASE)
@@ -117,7 +92,7 @@ class TerminologyControllerTest {
     @Test
     void getTerminologyProduct_returns_200_for_known_id() {
         InventoryApiSchemas.TerminologyProduct product = terminologyProduct();
-        when(service.terminologyProduct(eq("rxn-1001"))).thenReturn(Mono.just(product));
+        when(productInventoryService.terminologyProduct(eq("rxn-1001"))).thenReturn(Mono.just(product));
 
         client.get().uri(PRODUCT_BASE + "/rxn-1001")
                 .accept(MediaType.APPLICATION_JSON)
@@ -130,7 +105,7 @@ class TerminologyControllerTest {
 
     @Test
     void getTerminologyProduct_returns_404_for_unknown_id() {
-        when(service.terminologyProduct(eq("unknown-id")))
+        when(productInventoryService.terminologyProduct(eq("unknown-id")))
                 .thenReturn(Mono.error(new ResourceNotFoundException("Terminology product not found")));
 
         client.get().uri(PRODUCT_BASE + "/unknown-id")

@@ -3,8 +3,10 @@ package ke.co.safaricom.pims.inventory.erpnext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
+import ke.co.safaricom.pims.inventory.exception.ErrorCode;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
 import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
+import ke.co.safaricom.pims.inventory.exception.UpstreamServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
@@ -159,7 +161,20 @@ public class ErpNextClient {
                 || ex.getStatusCode().value() == 417) {
             return new ServiceValidationException(extractErpNextMessage(body, "The request could not be processed. Please check your inputs."));
         }
-        return new ServiceValidationException("An unexpected error occurred. Please try again.");
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status != null && (status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN)) {
+            return new UpstreamServiceException(
+                    ErrorCode.SERVICE_UNAVAILABLE,
+                    "Unable to authenticate with ERPNext. Please contact support.");
+        }
+        if (status != null && status.is5xxServerError()) {
+            return new UpstreamServiceException(
+                    ErrorCode.UPSTREAM_ERROR,
+                    "ERPNext service error (" + status.value() + "). Please try again later.");
+        }
+        return new UpstreamServiceException(
+                ErrorCode.UPSTREAM_ERROR,
+                "An unexpected error occurred while communicating with ERPNext.");
     }
 
     /**

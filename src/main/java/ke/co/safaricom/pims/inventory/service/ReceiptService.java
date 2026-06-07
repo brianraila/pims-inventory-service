@@ -6,6 +6,8 @@ import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
@@ -39,6 +41,8 @@ import java.util.Optional;
  */
 @Service
 public class ReceiptService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ReceiptService.class);
 
     private static final String SI_DOCTYPE = "Sales Invoice";
     private static final String PE_DOCTYPE = "Payment Entry";
@@ -129,7 +133,8 @@ public class ReceiptService {
             doc.save(out);
             return out.toByteArray();
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to render receipt PDF for order " + order.name(), e);
+            logger.error("Failed to generate receipt PDF for order {}", order.name(), e);
+            throw new UncheckedIOException("Failed to generate receipt PDF for order " + order.name(), e);
         }
     }
 

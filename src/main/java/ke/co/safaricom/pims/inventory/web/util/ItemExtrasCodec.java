@@ -111,7 +111,8 @@ public final class ItemExtrasCodec {
         }
         Object g2 = parse(rawDescription).get(KEY_GENERIC_NAME);
         if (g2 != null && !String.valueOf(g2).isBlank()) return String.valueOf(g2);
-        return null;
+        String stripped = strip(rawDescription);
+        return stripped.isBlank() ? null : stripped;
     }
 
     private static Map<String, Object> parseLooseMap(String inner) {
