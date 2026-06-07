@@ -42,7 +42,9 @@ public class InventoryProductController {
     @GetMapping
     @Operation(summary = "List all products (paginated)",
             description = "Products are sorted by most-ordered (default) or alphabetically. " +
-                    "Use ?sort=alphabetical to disable order-frequency ranking.")
+                    "Use ?sort=alphabetical to disable order-frequency ranking. " +
+                    "When sort=most_ordered, optional sort_days limits history to the last N days " +
+                    "and rank_by chooses qty (total units sold) or orders (distinct invoice count).")
     public Mono<InventoryApiSchemas.ProductListResponse> list(
             Authentication authentication,
             ServerWebExchange exchange,
@@ -52,10 +54,12 @@ public class InventoryProductController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Enums.ProductStatus status,
             @RequestParam(value = "manufacturer_id", required = false) UUID manufacturerId,
-            @RequestParam(value = "sort", defaultValue = "most_ordered") String sort) {
+            @RequestParam(value = "sort", defaultValue = "most_ordered") String sort,
+            @RequestParam(value = "sort_days", required = false) Integer sortDays,
+            @RequestParam(value = "rank_by", defaultValue = "qty") String rankBy) {
         return tenants.resolveTenantId(authentication, exchange)
                 .flatMap(t -> productInventoryService.listProducts(
-                        t, page, limit, search, category, status, manufacturerId, sort));
+                        t, page, limit, search, category, status, manufacturerId, sort, sortDays, rankBy));
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)

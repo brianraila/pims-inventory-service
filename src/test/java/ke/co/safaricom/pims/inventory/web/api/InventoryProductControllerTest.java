@@ -28,7 +28,7 @@ class InventoryProductControllerTest extends AbstractInventoryControllerTest {
         InventoryApiSchemas.Pagination pagination = new InventoryApiSchemas.Pagination(1, 10, 0, 0);
         InventoryApiSchemas.ProductListResponse response =
                 new InventoryApiSchemas.ProductListResponse(List.of(), pagination, null);
-        when(productInventoryService.listProducts(eq("t1"), anyInt(), anyInt(), any(), any(), any(), any(), any()))
+        when(productInventoryService.listProducts(eq("t1"), anyInt(), anyInt(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(BASE)
@@ -46,7 +46,7 @@ class InventoryProductControllerTest extends AbstractInventoryControllerTest {
         InventoryApiSchemas.ProductListResponse response =
                 new InventoryApiSchemas.ProductListResponse(List.of(), pagination, null);
         when(productInventoryService.listProducts(eq("t1"), eq(1), eq(5), eq("Amox"),
-                eq("Antibiotics"), eq(Enums.ProductStatus.available), any(), any()))
+                eq("Antibiotics"), eq(Enums.ProductStatus.available), any(), any(), any(), any()))
                 .thenReturn(Mono.just(response));
 
         client.get().uri(uriBuilder -> uriBuilder.path(BASE)

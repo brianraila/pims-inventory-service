@@ -59,7 +59,8 @@ public final class InventoryApiSchemas {
             String currency,
             Double tradeCost,
             Double totalValue,
-            Double sellingPrice) {}
+            Double sellingPrice,
+            Double orderFrequency) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
