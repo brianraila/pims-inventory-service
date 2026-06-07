@@ -123,9 +123,9 @@ class ItemExtrasCodecTest {
     }
 
     @Test
-    void displayGenericName_falls_back_to_stripped_text() {
+    void displayGenericName_returns_null_when_no_generic_name_found() {
         String result = ItemExtrasCodec.displayGenericName("Plain text, no fragment", Map.of());
-        assertThat(result).isEqualTo("Plain text, no fragment");
+        assertThat(result).isNull();
     }
 
     @Test
