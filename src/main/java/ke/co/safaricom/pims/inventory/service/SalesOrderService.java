@@ -8,6 +8,7 @@ import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
+import ke.co.safaricom.pims.inventory.exception.ConflictException;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
 import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
 import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
@@ -128,6 +129,26 @@ public class SalesOrderService {
     }
 
     // ---- Submit draft -------------------------------------------------------
+
+    /**
+     * Idempotently ensures a Sales Invoice is submitted before payment recording. No-op when
+     * {@code docstatus == 1}; delegates to {@link #submitOrder} for drafts.
+     */
+    public Mono<Void> ensureSubmitted(
+            String tenantId, String orderId, SalesOrderSchemas.SubmitOrderRequest req) {
+        return router.getOne(tenantId, DOCTYPE, orderId, SINGLE_TYPE).flatMap(resp -> {
+            ErpNextDoc doc = resp.data();
+            Integer docstatus = doc.docstatus();
+            if (docstatus != null && docstatus == 1) {
+                return Mono.empty();
+            }
+            if (docstatus != null && docstatus == 2) {
+                return Mono.error(new ConflictException(
+                        "Order " + orderId + " is cancelled and cannot be paid"));
+            }
+            return submitOrder(tenantId, orderId, req).then();
+        });
+    }
 
     public Mono<SalesOrderSchemas.OrderResponse> submitOrder(
             String tenantId, String orderId, SalesOrderSchemas.SubmitOrderRequest req) {

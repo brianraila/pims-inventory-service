@@ -5,11 +5,14 @@ import ke.co.safaricom.pims.inventory.kafka.dto.PaymentSuccessEvent;
 import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
 import ke.co.safaricom.pims.inventory.service.OrderPaymentService;
 import ke.co.safaricom.pims.inventory.service.PaymentDetails;
+import ke.co.safaricom.pims.inventory.service.SalesOrderService;
+import ke.co.safaricom.pims.inventory.web.model.SalesOrderSchemas;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import reactor.core.publisher.Mono;
 
 import java.util.Locale;
 
@@ -18,6 +21,7 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class PaymentKafkaConsumer {
 
+    private final SalesOrderService salesOrderService;
     private final OrderPaymentService orderPaymentService;
     private final ErpNextProperties erpNextProperties;
 
@@ -50,7 +54,15 @@ public class PaymentKafkaConsumer {
                     event.getPayerPhone(),
                     normalizePaidAt(event.getPaidAt()),
                     null);
-            orderPaymentService.recordPayment(tenantId, event.getOrderId(), details).block();
+            SalesOrderSchemas.SubmitOrderRequest submitReq = new SalesOrderSchemas.SubmitOrderRequest(
+                    details.paymentMethod(),
+                    details.amountTendered(),
+                    event.getPayerPhone(),
+                    null);
+            salesOrderService.ensureSubmitted(tenantId, event.getOrderId(), submitReq)
+                    .then(Mono.defer(() -> orderPaymentService.recordPayment(
+                            tenantId, event.getOrderId(), details)))
+                    .block();
             log.info("Recorded payment from event {} for order {} (tenant {})",
                     event.getEventId(), event.getOrderId(), tenantId);
         } catch (Exception ex) {

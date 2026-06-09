@@ -5,10 +5,12 @@ import ke.co.safaricom.pims.inventory.kafka.dto.PaymentSuccessEvent;
 import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
 import ke.co.safaricom.pims.inventory.service.OrderPaymentService;
 import ke.co.safaricom.pims.inventory.service.PaymentDetails;
+import ke.co.safaricom.pims.inventory.service.SalesOrderService;
 import ke.co.safaricom.pims.inventory.web.model.SalesOrderSchemas;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
@@ -27,6 +29,9 @@ class PaymentKafkaConsumerTest {
     private static final String ORDER_ID = "SINV-2024-00001";
 
     @Mock
+    private SalesOrderService salesOrderService;
+
+    @Mock
     private OrderPaymentService orderPaymentService;
 
     @Mock
@@ -36,7 +41,12 @@ class PaymentKafkaConsumerTest {
 
     @BeforeEach
     void setUp() {
-        consumer = new PaymentKafkaConsumer(orderPaymentService, erpNextProperties);
+        consumer = new PaymentKafkaConsumer(salesOrderService, orderPaymentService, erpNextProperties);
+    }
+
+    private void stubEnsureSubmittedSuccess() {
+        when(salesOrderService.ensureSubmitted(anyString(), anyString(), any()))
+                .thenReturn(Mono.empty());
     }
 
     private static PaymentSuccessEvent event(String status) {
@@ -60,6 +70,7 @@ class PaymentKafkaConsumerTest {
 
     @Test
     void onPaymentSuccess_records_payment_for_successful_event() {
+        stubEnsureSubmittedSuccess();
         SalesOrderSchemas.PaymentResponse response = new SalesOrderSchemas.PaymentResponse(
                 ORDER_ID, "recorded", "mpesa", 1500.0, 0.0, "QGR7XXXXX1", "PE-0001");
         when(orderPaymentService.recordPayment(eq(TENANT), eq(ORDER_ID), any(PaymentDetails.class)))
@@ -77,6 +88,7 @@ class PaymentKafkaConsumerTest {
 
     @Test
     void onPaymentSuccess_normalises_payment_service_MPESA_method() {
+        stubEnsureSubmittedSuccess();
         when(orderPaymentService.recordPayment(eq(TENANT), eq(ORDER_ID), any(PaymentDetails.class)))
                 .thenReturn(Mono.just(new SalesOrderSchemas.PaymentResponse(
                         ORDER_ID, "recorded", "mpesa", 1500.0, 0.0, "QGR7XXXXX1", "PE-0001")));
@@ -89,6 +101,7 @@ class PaymentKafkaConsumerTest {
 
     @Test
     void onPaymentSuccess_uses_wrapper_tenant_when_event_carries_header_name() {
+        stubEnsureSubmittedSuccess();
         when(erpNextProperties.wrapper()).thenReturn(new ErpNextProperties.WrapperConfig("http://wrapper", TENANT));
         when(orderPaymentService.recordPayment(eq(TENANT), eq(ORDER_ID), any(PaymentDetails.class)))
                 .thenReturn(Mono.just(new SalesOrderSchemas.PaymentResponse(
@@ -120,7 +133,35 @@ class PaymentKafkaConsumerTest {
     }
 
     @Test
+    void onPaymentSuccess_ensures_submitted_before_recording_payment() {
+        stubEnsureSubmittedSuccess();
+        when(orderPaymentService.recordPayment(eq(TENANT), eq(ORDER_ID), any(PaymentDetails.class)))
+                .thenReturn(Mono.just(new SalesOrderSchemas.PaymentResponse(
+                        ORDER_ID, "recorded", "mpesa", 1500.0, 0.0, "QGR7XXXXX1", "PE-0001")));
+
+        consumer.onPaymentSuccess(event("SUCCESS"));
+
+        InOrder order = inOrder(salesOrderService, orderPaymentService);
+        order.verify(salesOrderService).ensureSubmitted(eq(TENANT), eq(ORDER_ID), argThat(req ->
+                "mpesa".equals(req.paymentMethod())
+                        && req.amountReceived() == 1500.0
+                        && "254712345678".equals(req.mpesaPhone())));
+        order.verify(orderPaymentService).recordPayment(eq(TENANT), eq(ORDER_ID), any(PaymentDetails.class));
+    }
+
+    @Test
+    void onPaymentSuccess_swallows_ensure_submitted_failures_so_consumer_keeps_running() {
+        when(salesOrderService.ensureSubmitted(eq(TENANT), eq(ORDER_ID), any()))
+                .thenReturn(Mono.error(new RuntimeException("ERPNext unavailable")));
+
+        assertThatCode(() -> consumer.onPaymentSuccess(event("SUCCESS"))).doesNotThrowAnyException();
+
+        verify(orderPaymentService, never()).recordPayment(any(), any(), any());
+    }
+
+    @Test
     void onPaymentSuccess_swallows_exceptions_so_consumer_keeps_running() {
+        stubEnsureSubmittedSuccess();
         when(orderPaymentService.recordPayment(eq(TENANT), eq(ORDER_ID), any(PaymentDetails.class)))
                 .thenReturn(Mono.error(new RuntimeException("ERPNext unavailable")));
 

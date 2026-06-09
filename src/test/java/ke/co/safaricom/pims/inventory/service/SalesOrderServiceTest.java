@@ -7,6 +7,7 @@ import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
+import ke.co.safaricom.pims.inventory.exception.ConflictException;
 import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
 import ke.co.safaricom.pims.inventory.web.model.SalesOrderSchemas;
 import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
@@ -148,6 +149,63 @@ class SalesOrderServiceTest {
                 .verify();
 
         verify(router, never()).replace(eq(TENANT), eq("Sales Invoice"), eq(ORDER_ID), anyMap(), eq(SINGLE_TYPE));
+    }
+
+    // ---- ensureSubmitted ------------------------------------------------------
+
+    @Test
+    void ensureSubmitted_submits_draft_order() {
+        ErpNextDoc draft = invoiceDoc(0, 1000.0);
+        ErpNextDoc submitted = invoiceDoc(1, 1000.0);
+
+        Map<String, Object> rawDraft = new HashMap<>();
+        rawDraft.put("doctype", "Sales Invoice");
+        rawDraft.put("name", ORDER_ID);
+        rawDraft.put("customer", "Jane Doe");
+        rawDraft.put("modified", "2024-01-01 10:00:00.000000");
+        rawDraft.put("docstatus", 0);
+        rawDraft.put("items", List.of(Map.of("item_code", ITEM_CODE, "qty", 10.0, "rate", 100.0)));
+
+        when(router.getOne(TENANT, "Sales Invoice", ORDER_ID, SINGLE_TYPE))
+                .thenReturn(Mono.just(new ErpNextSingleResponse<>(draft)));
+        when(router.getOne(TENANT, "Sales Invoice", ORDER_ID, RAW_SINGLE_TYPE))
+                .thenReturn(Mono.just(new ErpNextSingleResponse<>(rawDraft)));
+        when(router.callMethod(eq(TENANT), eq("frappe.client.submit"), anyMap(), eq(SUBMIT_TYPE)))
+                .thenReturn(Mono.just(new ErpNextMessageResponse<>(submitted)));
+        when(router.getOne(TENANT, "Sales Invoice", ORDER_ID, SINGLE_TYPE))
+                .thenReturn(
+                        Mono.just(new ErpNextSingleResponse<>(draft)),
+                        Mono.just(new ErpNextSingleResponse<>(submitted)));
+
+        StepVerifier.create(service.ensureSubmitted(TENANT, ORDER_ID, null))
+                .verifyComplete();
+
+        verify(router).callMethod(eq(TENANT), eq("frappe.client.submit"), anyMap(), eq(SUBMIT_TYPE));
+    }
+
+    @Test
+    void ensureSubmitted_noop_when_already_submitted() {
+        ErpNextDoc submitted = invoiceDoc(1, 1000.0);
+        when(router.getOne(TENANT, "Sales Invoice", ORDER_ID, SINGLE_TYPE))
+                .thenReturn(Mono.just(new ErpNextSingleResponse<>(submitted)));
+
+        StepVerifier.create(service.ensureSubmitted(TENANT, ORDER_ID, null))
+                .verifyComplete();
+
+        verify(router, never()).callMethod(any(), any(), anyMap(), any());
+    }
+
+    @Test
+    void ensureSubmitted_rejects_cancelled_order() {
+        ErpNextDoc cancelled = invoiceDoc(2, 1000.0);
+        when(router.getOne(TENANT, "Sales Invoice", ORDER_ID, SINGLE_TYPE))
+                .thenReturn(Mono.just(new ErpNextSingleResponse<>(cancelled)));
+
+        StepVerifier.create(service.ensureSubmitted(TENANT, ORDER_ID, null))
+                .expectError(ConflictException.class)
+                .verify();
+
+        verify(router, never()).callMethod(any(), any(), anyMap(), any());
     }
 
     // ---- submitOrder ----------------------------------------------------------
