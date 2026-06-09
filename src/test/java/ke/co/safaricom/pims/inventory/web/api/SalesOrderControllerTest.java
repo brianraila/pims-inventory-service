@@ -13,6 +13,7 @@ import org.springframework.security.test.web.reactive.server.SecurityMockServerC
 import reactor.core.publisher.Mono;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SalesOrderControllerTest extends AbstractInventoryControllerTest {
@@ -26,6 +27,8 @@ class SalesOrderControllerTest extends AbstractInventoryControllerTest {
     void pay_returns_200_with_payment_response() {
         SalesOrderSchemas.PaymentResponse response = new SalesOrderSchemas.PaymentResponse(
                 ORDER_ID, "recorded", "cash", 1500.0, 500.0, null, "PE-0001");
+        when(salesOrderService.ensureSubmitted(eq("t1"), eq(ORDER_ID), any(SalesOrderSchemas.SubmitOrderRequest.class)))
+                .thenReturn(Mono.empty());
         when(orderPaymentService.recordPayment(eq("t1"), eq(ORDER_ID), any(PaymentDetails.class)))
                 .thenReturn(Mono.just(response));
 
@@ -60,7 +63,30 @@ class SalesOrderControllerTest extends AbstractInventoryControllerTest {
     }
 
     @Test
+    void pay_ensures_submitted_before_recording_payment() {
+        when(salesOrderService.ensureSubmitted(eq("t1"), eq(ORDER_ID), any(SalesOrderSchemas.SubmitOrderRequest.class)))
+                .thenReturn(Mono.empty());
+        when(orderPaymentService.recordPayment(eq("t1"), eq(ORDER_ID), any(PaymentDetails.class)))
+                .thenReturn(Mono.just(new SalesOrderSchemas.PaymentResponse(
+                        ORDER_ID, "recorded", "cash", 1500.0, 0.0, null, "PE-0001")));
+
+        client.post().uri(BASE + "/" + ORDER_ID + "/pay")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"payment_method\":\"cash\",\"amount_tendered\":1500.0,\"notes\":\"counter\"}")
+                .exchange()
+                .expectStatus().isOk();
+
+        verify(salesOrderService).ensureSubmitted(eq("t1"), eq(ORDER_ID), argThat(req ->
+                "cash".equals(req.paymentMethod())
+                        && req.amountReceived() == 1500.0
+                        && "counter".equals(req.notes())));
+        verify(orderPaymentService).recordPayment(eq("t1"), eq(ORDER_ID), any(PaymentDetails.class));
+    }
+
+    @Test
     void pay_returns_409_when_order_already_submitted() {
+        when(salesOrderService.ensureSubmitted(eq("t1"), eq(ORDER_ID), any(SalesOrderSchemas.SubmitOrderRequest.class)))
+                .thenReturn(Mono.empty());
         when(orderPaymentService.recordPayment(eq("t1"), eq(ORDER_ID), any(PaymentDetails.class)))
                 .thenReturn(Mono.error(new ConflictException("Order has already been submitted")));
 

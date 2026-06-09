@@ -24,12 +24,14 @@ import java.util.Map;
  * {@code POST /orders/{id}/pay} REST path (cash, or an already-confirmed M-Pesa payment) and the
  * Kafka listener that consumes confirmed M-Pesa payment events.
  *
- * <p>Payment recording necessarily comes <em>after</em> {@code SalesOrderService.submitOrder}, not
- * before: ERPNext's {@code Payment Entry.validate_reference_documents()} refuses to even insert a
- * draft Payment Entry that references a draft Sales Invoice ("{@code Sales Invoice X must be
- * submitted}"). So {@code /submit} finalises the invoice first ({@code docstatus: 0 → 1}), and
- * {@code /pay} then creates <em>and submits</em> the Payment Entry against it in one step — which
- * is what posts the GL entries and flips the invoice's status to "Paid".
+ * <p>Payment recording necessarily comes <em>after</em> the Sales Invoice is submitted ({@code
+ * docstatus: 0 → 1}), not before: ERPNext's {@code Payment Entry.validate_reference_documents()}
+ * refuses to even insert a draft Payment Entry that references a draft Sales Invoice ("{@code Sales
+ * Invoice X must be submitted}"). Callers ({@code POST /orders/{id}/pay} and the Kafka payment
+ * consumer) invoke {@link SalesOrderService#ensureSubmitted} first, which idempotently submits a
+ * draft invoice or no-ops when already submitted; {@code /pay} then creates <em>and submits</em> the
+ * Payment Entry against it in one step — which is what posts the GL entries and flips the invoice's
+ * status to "Paid".
  *
  * <p>Deliberately depends only on {@link ErpNextTenantRouter} (not on {@link SalesOrderService}),
  * since the dependency naturally runs the other way — {@code SalesOrderService} only ever submits
@@ -75,8 +77,9 @@ public class OrderPaymentService {
     /**
      * Records a payment against an already-submitted order: creates and submits a Payment Entry
      * referencing the Sales Invoice (which posts GL entries and flips its status to "Paid"), and
-     * returns the amount paid plus any change due. Rejects orders that are still in draft —
-     * {@code /submit} must run first. Idempotent on {@code details.transactionRef()} — a
+     * returns the amount paid plus any change due. Rejects orders that are still in draft as a
+     * safety net — callers should invoke {@link SalesOrderService#ensureSubmitted} first.
+     * Idempotent on {@code details.transactionRef()} — a
      * redelivered event with the same reference returns the already-recorded entry rather than
      * creating a duplicate.
      */

@@ -104,8 +104,11 @@ public class SalesOrderController {
             @Valid @RequestBody SalesOrderSchemas.PayOrderRequest body) {
         PaymentDetails details = new PaymentDetails(
                 body.paymentMethod(), body.amountTendered(), body.transactionRef(), null, null, body.notes());
+        SalesOrderSchemas.SubmitOrderRequest submitReq = new SalesOrderSchemas.SubmitOrderRequest(
+                body.paymentMethod(), body.amountTendered(), null, body.notes());
         return tenants.resolveTenantId(auth, exchange)
-                .flatMap(t -> orderPaymentService.recordPayment(t, orderId, details));
+                .flatMap(t -> salesOrderService.ensureSubmitted(t, orderId, submitReq)
+                        .then(Mono.defer(() -> orderPaymentService.recordPayment(t, orderId, details))));
     }
 
     @PostMapping("/{order_id}/submit")
