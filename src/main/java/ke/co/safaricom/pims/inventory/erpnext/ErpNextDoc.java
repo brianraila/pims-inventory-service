@@ -70,6 +70,13 @@ public record ErpNextDoc(
 
         // --- Supplier ---
         @JsonProperty("supplier_name") String supplierName,
+        @JsonProperty("supplier_group") String supplierGroup,
+        @JsonProperty("supplier_type") String supplierType,
+        @JsonProperty("tax_id") String taxId,
+        @JsonProperty("supplier_details") String supplierDetails,
+        @JsonProperty("country") String country,
+        @JsonProperty("supplier_group_name") String supplierGroupName,
+        @JsonProperty("parent_supplier_group") String parentSupplierGroup,
 
         // --- Warehouse ---
         @JsonProperty("warehouse_name") String warehouseName,
