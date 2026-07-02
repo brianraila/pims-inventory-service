@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import ke.co.safaricom.pims.inventory.Constants;
 import ke.co.safaricom.pims.inventory.api.dto.CreateSupplierRequest;
+import ke.co.safaricom.pims.inventory.api.dto.SupplierPage;
 import ke.co.safaricom.pims.inventory.api.dto.SupplierResponse;
 import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
 import ke.co.safaricom.pims.inventory.service.SupplierService;
@@ -40,11 +41,13 @@ public class SupplierController {
     }
 
     @GetMapping
-    @Operation(summary = "List suppliers for the tenant (optional name search)")
-    public Mono<List<SupplierResponse>> list(Authentication auth, ServerWebExchange exchange,
-                                             @RequestParam(required = false) String search) {
+    @Operation(summary = "List suppliers for the tenant (server-side name search + pagination)")
+    public Mono<SupplierPage> list(Authentication auth, ServerWebExchange exchange,
+                                   @RequestParam(required = false) String search,
+                                   @RequestParam(defaultValue = "0") int page,
+                                   @RequestParam(defaultValue = "20") int size) {
         return tenants.resolveTenantId(auth, exchange)
-                .flatMap(tenantId -> supplierService.listSuppliers(tenantId, search));
+                .flatMap(tenantId -> supplierService.listSuppliers(tenantId, search, page, size));
     }
 
     @GetMapping("/{id}")

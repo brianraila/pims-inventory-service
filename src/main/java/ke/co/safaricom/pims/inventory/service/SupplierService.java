@@ -3,6 +3,7 @@ package ke.co.safaricom.pims.inventory.service;
 import ke.co.safaricom.pims.inventory.api.dto.CreateSupplierGroupRequest;
 import ke.co.safaricom.pims.inventory.api.dto.CreateSupplierRequest;
 import ke.co.safaricom.pims.inventory.api.dto.SupplierGroupResponse;
+import ke.co.safaricom.pims.inventory.api.dto.SupplierPage;
 import ke.co.safaricom.pims.inventory.api.dto.SupplierResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
@@ -34,7 +35,8 @@ public class SupplierService {
 
     private static final String SUPPLIER_FIELDS =
             "[\"name\",\"supplier_name\",\"supplier_group\",\"supplier_type\",\"tax_id\","
-                    + "\"country\",\"supplier_details\",\"disabled\",\"creation\",\"modified\"]";
+                    + "\"country\",\"supplier_details\",\"disabled\",\"owner\",\"modified_by\","
+                    + "\"creation\",\"modified\"]";
 
     private final ErpNextTenantRouter router;
     private final SupplierMapper mapper;
@@ -54,16 +56,30 @@ public class SupplierService {
         this.defaultCountry = defaultCountry;
     }
 
-    public Mono<List<SupplierResponse>> listSuppliers(String tenantId, String search) {
+    public Mono<SupplierPage> listSuppliers(String tenantId, String search, int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = size <= 0 ? 20 : Math.min(size, 200);
+
         Map<String, String> params = new HashMap<>();
         params.put(PARAM_FIELDS, SUPPLIER_FIELDS);
         params.put("order_by", "modified desc");
+        params.put("limit_start", String.valueOf(safePage * safeSize));
+        // Fetch one extra row to detect whether another page exists (avoids a count call).
+        params.put("limit_page_length", String.valueOf(safeSize + 1));
         if (search != null && !search.isBlank()) {
             String term = search.replace("\"", "").trim();
             params.put(PARAM_FILTERS, "[[\"supplier_name\",\"like\",\"%" + term + "%\"]]");
         }
         return router.getList(tenantId, DOCTYPE_SUPPLIER, params, LIST_TYPE)
-                .map(response -> response.data().stream().map(mapper::toResponse).toList());
+                .map(response -> {
+                    List<ErpNextDoc> docs = response.data();
+                    boolean hasNext = docs.size() > safeSize;
+                    List<SupplierResponse> items = docs.stream()
+                            .limit(safeSize)
+                            .map(mapper::toResponse)
+                            .toList();
+                    return new SupplierPage(items, safePage, safeSize, hasNext, safePage > 0);
+                });
     }
 
     public Mono<SupplierResponse> getSupplier(String tenantId, String id) {

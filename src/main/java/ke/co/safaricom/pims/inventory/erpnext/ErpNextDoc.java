@@ -15,6 +15,7 @@ public record ErpNextDoc(
         String owner,
         @JsonProperty("creation") String creation,
         @JsonProperty("modified") String modified,
+        @JsonProperty("modified_by") String modifiedBy,
         @JsonProperty("docstatus") Integer docstatus,
         @JsonProperty("title") String taxTemplateTitle,
         @JsonProperty("is_default") Integer isDefault,
