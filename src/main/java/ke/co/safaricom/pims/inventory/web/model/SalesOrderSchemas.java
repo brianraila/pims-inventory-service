@@ -98,6 +98,7 @@ public final class SalesOrderSchemas {
             String customer,
             String status,
             double grandTotal,
+            int totalQty,
             String currency,
             String createdAt
     ) {}

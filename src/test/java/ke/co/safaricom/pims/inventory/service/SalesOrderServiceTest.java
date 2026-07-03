@@ -56,11 +56,13 @@ class SalesOrderServiceTest {
 
     /** Stubs the cash-settlement RPC chain (get_payment_entry → insert → submit) run after submit. */
     private void stubCashSettlement() {
+        Map<String, Object> paymentEntry = new HashMap<>();
+        paymentEntry.put("doctype", "Payment Entry");
+        paymentEntry.put("paid_amount", 1000.0);
         when(router.callMethod(eq(TENANT),
                 eq("erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry"),
                 anyMap(), eq(RAW_MESSAGE_TYPE)))
-                .thenReturn(Mono.just(new ErpNextMessageResponse<>(
-                        Map.of("doctype", "Payment Entry", "paid_amount", 1000.0))));
+                .thenReturn(Mono.just(new ErpNextMessageResponse<>(paymentEntry)));
         when(router.callMethod(eq(TENANT), eq("frappe.client.insert"), anyMap(), eq(RAW_MESSAGE_TYPE)))
                 .thenReturn(Mono.just(new ErpNextMessageResponse<>(
                         Map.of("name", "PE-0001", "docstatus", 0))));

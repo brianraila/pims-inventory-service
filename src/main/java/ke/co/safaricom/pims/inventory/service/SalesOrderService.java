@@ -53,7 +53,7 @@ public class SalesOrderService {
 
     // ---- Query fields -------------------------------------------------------
     private static final String SI_LIST_FIELDS =
-            "[\"name\",\"customer\",\"posting_date\",\"grand_total\",\"status\",\"docstatus\",\"currency\",\"creation\"]";
+            "[\"name\",\"customer\",\"posting_date\",\"grand_total\",\"total_qty\",\"status\",\"docstatus\",\"currency\",\"creation\"]";
 
     private final ErpNextTenantRouter router;
     private final InventoryService inventoryService;
@@ -414,6 +414,7 @@ public class SalesOrderService {
                 doc.customer() != null ? doc.customer() : DEFAULT_CUSTOMER,
                 docStatusLabel(doc.docstatus()),
                 doc.grandTotal() != null ? doc.grandTotal() : 0,
+                doc.totalQty() != null ? (int) Math.round(doc.totalQty()) : 0,
                 doc.currency() != null ? doc.currency() : CURRENCY,
                 doc.creation());
     }
