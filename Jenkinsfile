@@ -1,2 +1,7 @@
-@Library('global_shared_library@minicrm')_
-runPipeline(agent:'maven-spot-instances', environment:'aws', technology: 'java-17', namespace: 'moh', account_name: 'ic-dxl', mvn_version: 'M363')
+@Library('global_shared_library@srepsdt')_
+mavenSpotInstancePipeline(
+   technology: 'java-17',
+   environment: 'on-prem',
+   namespace: 'digital-health',
+   squad: 'digital-health'
+)
