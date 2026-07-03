@@ -196,6 +196,8 @@ public class InventoryService {
     public Mono<List<InventoryApiSchemas.SupplierOption>> listSuppliers(String tenantId) {
         Map<String, String> params = new HashMap<>();
         params.put(PARAM_FIELDS, "[\"name\",\"supplier_name\"]");
+        // Only active suppliers are selectable in pickers (product create, PO forms, etc.).
+        params.put(PARAM_FILTERS, "[[\"disabled\",\"=\",0]]");
         params.put("limit_page_length", "200");
         return router.getList(tenantId, "Supplier", params, LIST_TYPE)
                 .map(r -> r.data().stream()

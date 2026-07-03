@@ -81,4 +81,23 @@ public class PurchaseOrderController {
         return tenantContextResolver.resolveTenantId(auth, exchange)
                 .flatMap(tenantId -> purchaseOrderService.submitPurchaseOrder(tenantId, id));
     }
+
+    @org.springframework.web.bind.annotation.GetMapping("/{id}/receipts")
+    @Operation(summary = "List purchase receipts posted against this purchase order")
+    public Mono<List<ke.co.safaricom.pims.inventory.api.dto.ReceiptSummary>> listReceipts(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.listReceipts(tenantId, id));
+    }
+
+    @PostMapping("/{id}/receive")
+    @Operation(summary = "Receive stock against a submitted purchase order (creates a Purchase Receipt)")
+    public Mono<ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderDetail> receiveStock(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            @Valid @RequestBody ke.co.safaricom.pims.inventory.api.dto.ReceiveStockRequest request,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.receiveStock(tenantId, id, request));
+    }
 }

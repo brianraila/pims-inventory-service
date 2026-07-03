@@ -22,10 +22,13 @@ public record PurchaseOrderDetail(
 ) {
     @Schema(description = "Purchase order line")
     public record Item(
+            @Schema(description = "ERPNext child-row name (purchase_order_item) — links a receipt back to this line")
+            String rowId,
             String itemCode,
             String itemName,
             String uom,
             double qty,
+            @Schema(description = "Quantity already received against this line") double receivedQty,
             double rate,
             double amount
     ) {}
