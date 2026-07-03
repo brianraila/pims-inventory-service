@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.config.ErpNextProperties;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
@@ -14,6 +15,7 @@ import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -47,6 +49,27 @@ class SalesOrderServiceTest {
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ErpNextMessageResponse<ErpNextDoc>> SUBMIT_TYPE =
             new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ErpNextListResponse<ErpNextDoc>> LIST_TYPE =
+            new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<Map<String, Object>>> RAW_MESSAGE_TYPE =
+            new ParameterizedTypeReference<>() {};
+
+    /** Stubs the cash-settlement RPC chain (get_payment_entry → insert → submit) run after submit. */
+    private void stubCashSettlement() {
+        Map<String, Object> paymentEntry = new HashMap<>();
+        paymentEntry.put("doctype", "Payment Entry");
+        paymentEntry.put("paid_amount", 1000.0);
+        when(router.callMethod(eq(TENANT),
+                eq("erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry"),
+                anyMap(), eq(RAW_MESSAGE_TYPE)))
+                .thenReturn(Mono.just(new ErpNextMessageResponse<>(paymentEntry)));
+        when(router.callMethod(eq(TENANT), eq("frappe.client.insert"), anyMap(), eq(RAW_MESSAGE_TYPE)))
+                .thenReturn(Mono.just(new ErpNextMessageResponse<>(
+                        Map.of("name", "PE-0001", "docstatus", 0))));
+        when(router.callMethod(eq(TENANT), eq("frappe.client.submit"), anyMap(), eq(RAW_MESSAGE_TYPE)))
+                .thenReturn(Mono.just(new ErpNextMessageResponse<>(
+                        Map.of("name", "PE-0001", "docstatus", 1))));
+    }
 
     @Mock
     private ErpNextTenantRouter router;
@@ -176,6 +199,7 @@ class SalesOrderServiceTest {
                 .thenReturn(
                         Mono.just(new ErpNextSingleResponse<>(draft)),
                         Mono.just(new ErpNextSingleResponse<>(submitted)));
+        stubCashSettlement();
 
         StepVerifier.create(service.ensureSubmitted(TENANT, ORDER_ID, null))
                 .verifyComplete();
@@ -232,6 +256,7 @@ class SalesOrderServiceTest {
                     capturedSubmitBody.set(inv.getArgument(2));
                     return Mono.just(new ErpNextMessageResponse<>(submitted));
                 });
+        stubCashSettlement();
 
         StepVerifier.create(service.submitOrder(TENANT, ORDER_ID, null))
                 .assertNext(resp -> {

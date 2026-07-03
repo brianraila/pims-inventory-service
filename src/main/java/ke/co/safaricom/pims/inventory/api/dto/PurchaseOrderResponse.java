@@ -14,5 +14,8 @@ public record PurchaseOrderResponse(
         @Schema(description = "Date goods were received (YYYY-MM-DD)") String receivedDate,
         @Schema(description = "Status: Draft | To Receive and Bill | To Bill | Completed | Cancelled") String status,
         @Schema(description = "Number of line items") int items,
-        @Schema(description = "Grand total amount") double totalAmount
+        @Schema(description = "Total quantity across all lines") double totalQty,
+        @Schema(description = "Grand total amount") double totalAmount,
+        @Schema(description = "Percentage of the order received (0-100)") double perReceived,
+        @Schema(description = "Percentage of the order billed/invoiced (0-100)") double perBilled
 ) {}

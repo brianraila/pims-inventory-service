@@ -21,7 +21,14 @@
         <java.version>17</java.version>
         <spring-cloud.version>2025.0.2</spring-cloud.version>
         <jacoco.version>0.8.12</jacoco.version>
-        <netty.version>4.1.133.Final</netty.version>
+        <!-- CVE-2026-50020/47244/48043/50560/44249/45416/50010/45674/47691/45673/45536: Netty codec/handler/resolver/transport -->
+        <netty.version>4.1.135.Final</netty.version>
+        <!-- CVE-2026-9828: logback-core deserialization of untrusted data -->
+        <logback.version>1.5.33</logback.version>
+        <!-- CVE-2026-41731/41726: spring-kafka insecure deserialization / DoS -->
+        <spring-kafka.version>3.3.16</spring-kafka.version>
+        <!-- CVE-2026-47838: spring-security-web X.509 user impersonation -->
+        <spring-security.version>6.5.11</spring-security.version>
         <sonar.exclusions>
             pom.xml,
             **/annotation/**/*,
@@ -169,16 +176,16 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- FIX GHSA-72hv-8253-57qq: jackson-core DoS via async parser -->
+        <!-- FIX GHSA-72hv-8253-57qq + CVE-2026-54512..54518: jackson-core/databind -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
-            <version>2.21.1</version>
+            <version>2.21.4</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.21.1</version>
+            <version>2.21.4</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -239,11 +246,11 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- FIX GHSA-72hv-8253-57qq: align all Jackson modules via BOM -->
+            <!-- FIX GHSA-72hv-8253-57qq + CVE-2026-54512..54518: align all Jackson modules via BOM -->
             <dependency>
                 <groupId>com.fasterxml.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
-                <version>2.21.1</version>
+                <version>2.21.4</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

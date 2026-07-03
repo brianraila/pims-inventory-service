@@ -20,7 +20,10 @@ public final class SalesOrderSchemas {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CreateOrderRequest(
-            /** Display name for the receipt. Defaults to "Walk-in Customer" if blank. */
+            /**
+             * The ERPNext customer to bill. The prescription service resolves/syncs the customer and
+             * passes its ERPNext name here; blank defaults to "Walk-in Customer".
+             */
             String customerName,
             /** Optional prescription reference stored in remarks. */
             String prescriptionId,
@@ -95,6 +98,7 @@ public final class SalesOrderSchemas {
             String customer,
             String status,
             double grandTotal,
+            int totalQty,
             String currency,
             String createdAt
     ) {}

@@ -53,7 +53,7 @@ public class SalesOrderService {
 
     // ---- Query fields -------------------------------------------------------
     private static final String SI_LIST_FIELDS =
-            "[\"name\",\"customer\",\"posting_date\",\"grand_total\",\"status\",\"docstatus\",\"currency\",\"creation\"]";
+            "[\"name\",\"customer\",\"posting_date\",\"grand_total\",\"total_qty\",\"status\",\"docstatus\",\"currency\",\"creation\"]";
 
     private final ErpNextTenantRouter router;
     private final InventoryService inventoryService;
@@ -77,6 +77,8 @@ public class SalesOrderService {
         return inventoryService.listItems(tenantId).flatMap(allItems -> {
             List<Map<String, Object>> erpItems = resolveLineItems(tenantId, req.items(), allItems);
             return ensureStockAvailable(tenantId, erpItems).then(Mono.defer(() -> {
+                // The prescription service owns customer lookup + ERPNext sync and passes us the
+                // resolved ERPNext customer name; we use it directly (blank → Walk-in Customer).
                 String customer = resolveCustomer(req.customerName());
                 return buildInvoiceBodyWithTax(tenantId, customer, erpItems, req.prescriptionId(), 0)
                         .flatMap(body -> router.create(tenantId, DOCTYPE, body, SINGLE_TYPE))
@@ -174,9 +176,63 @@ public class SalesOrderService {
                     Map<String, Object> submitBody = new HashMap<>();
                     submitBody.put("doc", latest);
                     return router.callMethod(tenantId, "frappe.client.submit", submitBody, SUBMIT_TYPE)
+                            .then(settleIfCash(tenantId, orderId, req))
                             .then(router.getOne(tenantId, DOCTYPE, orderId, SINGLE_TYPE));
                 })
                 .map(resp -> toOrderResponse(resp.data(), null));
+    }
+
+    /**
+     * For a cash sale, immediately settles the just-submitted Sales Invoice in ERPNext so it does
+     * not linger as "Unpaid": ERPNext's {@code get_payment_entry} builds a fully-populated Payment
+     * Entry (paid amount = outstanding, accounts defaulted from the company) which we then insert
+     * and submit. Best-effort — the invoice is already finalised, so a settlement hiccup is logged
+     * rather than surfaced, and can be reconciled from the payment record.
+     */
+    private Mono<Void> settleIfCash(
+            String tenantId, String orderId, SalesOrderSchemas.SubmitOrderRequest req) {
+        boolean isCash = req == null
+                || !StringUtils.hasText(req.paymentMethod())
+                || "cash".equalsIgnoreCase(req.paymentMethod());
+        if (!isCash) {
+            return Mono.empty();
+        }
+        Map<String, Object> args = new HashMap<>();
+        args.put("dt", DOCTYPE);
+        args.put("dn", orderId);
+        return router.callMethod(tenantId,
+                        "erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry",
+                        args, RAW_MESSAGE_TYPE)
+                .flatMap(resp -> {
+                    Map<String, Object> pe = resp.message();
+                    if (pe == null || pe.isEmpty()) {
+                        return Mono.empty();
+                    }
+                    // ERPNext defaults the paid-to account from the company; when that account is a
+                    // Bank type, validate() demands a reference no/date. Cash sales have no external
+                    // reference, so stamp the invoice name + today to satisfy the check (harmless for
+                    // Cash-type accounts, which ignore these fields).
+                    pe.put("reference_no", orderId);
+                    pe.put("reference_date", LocalDate.now().toString());
+                    Map<String, Object> insertBody = new HashMap<>();
+                    insertBody.put("doc", pe);
+                    return router.callMethod(tenantId, "frappe.client.insert", insertBody, RAW_MESSAGE_TYPE)
+                            .flatMap(inserted -> {
+                                Map<String, Object> saved = inserted.message();
+                                if (saved == null || saved.isEmpty()) {
+                                    return Mono.empty();
+                                }
+                                Map<String, Object> submitBody = new HashMap<>();
+                                submitBody.put("doc", saved);
+                                return router.callMethod(tenantId, "frappe.client.submit", submitBody, RAW_MESSAGE_TYPE);
+                            });
+                })
+                .onErrorResume(ex -> {
+                    log.warn("Cash settlement failed for order {} — invoice remains submitted/unpaid: {}",
+                            orderId, ex.toString());
+                    return Mono.empty();
+                })
+                .then();
     }
 
     private Mono<Void> patchRemarks(String tenantId, String orderId, SalesOrderSchemas.SubmitOrderRequest req) {
@@ -358,6 +414,7 @@ public class SalesOrderService {
                 doc.customer() != null ? doc.customer() : DEFAULT_CUSTOMER,
                 docStatusLabel(doc.docstatus()),
                 doc.grandTotal() != null ? doc.grandTotal() : 0,
+                doc.totalQty() != null ? (int) Math.round(doc.totalQty()) : 0,
                 doc.currency() != null ? doc.currency() : CURRENCY,
                 doc.creation());
     }
@@ -404,5 +461,9 @@ public class SalesOrderService {
     // frappe.client.submit is an /api/method/* RPC — Frappe wraps its return value in
     // {"message": ...}, not the {"data": ...} envelope used by /api/resource/* endpoints.
     private static final ParameterizedTypeReference<ErpNextMessageResponse<ErpNextDoc>> SUBMIT_TYPE =
+            new ParameterizedTypeReference<>() {};
+
+    // get_payment_entry / frappe.client.insert return the full doc dict under "message".
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<Map<String, Object>>> RAW_MESSAGE_TYPE =
             new ParameterizedTypeReference<>() {};
 }

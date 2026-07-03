@@ -15,12 +15,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriUtils;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 
 /**
  * Low-level reactive HTTP client for ERPNext REST API calls.
@@ -30,6 +34,17 @@ import java.nio.charset.StandardCharsets;
 public class ErpNextClient {
 
     private static final Logger logger = LoggerFactory.getLogger(ErpNextClient.class);
+
+    /**
+     * Retries transient connection failures (e.g. "Connection reset" on a reused pooled socket)
+     * with exponential backoff. Only network-level errors are retried — HTTP error responses
+     * ({@link WebClientResponseException}) are never retried. On exhaustion the ORIGINAL error is
+     * rethrown so downstream handlers keep mapping it to a clean 503.
+     */
+    private static final Retry TRANSIENT_RETRY = Retry.backoff(3, Duration.ofMillis(300))
+            .maxBackoff(Duration.ofSeconds(3))
+            .filter(ErpNextClient::isTransientConnectionError)
+            .onRetryExhaustedThrow((spec, signal) -> signal.failure());
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
@@ -52,6 +67,7 @@ public class ErpNextClient {
                 .headers(h -> h.addAll(requestHeaders))
                 .retrieve()
                 .bodyToMono(responseType)
+                .retryWhen(TRANSIENT_RETRY)
                 .onErrorMap(WebClientResponseException.class, this::mapHttpError);
     }
 
@@ -68,6 +84,7 @@ public class ErpNextClient {
                 .headers(h -> h.addAll(requestHeaders))
                 .retrieve()
                 .bodyToMono(responseType)
+                .retryWhen(TRANSIENT_RETRY)
                 .onErrorMap(WebClientResponseException.class, this::mapHttpError);
     }
 
@@ -85,6 +102,7 @@ public class ErpNextClient {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(responseType)
+                .retryWhen(TRANSIENT_RETRY)
                 .onErrorMap(WebClientResponseException.class, this::mapHttpError);
     }
 
@@ -102,6 +120,7 @@ public class ErpNextClient {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(responseType)
+                .retryWhen(TRANSIENT_RETRY)
                 .onErrorMap(WebClientResponseException.class, this::mapHttpError);
     }
 
@@ -119,6 +138,7 @@ public class ErpNextClient {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(responseType)
+                .retryWhen(TRANSIENT_RETRY)
                 .onErrorMap(WebClientResponseException.class, this::mapHttpError);
     }
 
@@ -136,6 +156,7 @@ public class ErpNextClient {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(responseType)
+                .retryWhen(TRANSIENT_RETRY)
                 .onErrorMap(WebClientResponseException.class, this::mapHttpError);
     }
 
@@ -146,7 +167,31 @@ public class ErpNextClient {
                 .headers(h -> h.addAll(requestHeaders))
                 .retrieve()
                 .bodyToMono(Void.class)
+                .retryWhen(TRANSIENT_RETRY)
                 .onErrorMap(WebClientResponseException.class, this::mapHttpError);
+    }
+
+    /**
+     * True for network-level failures worth retrying — a connection reset / premature close /
+     * broken pipe on a reused pooled socket. HTTP error responses are excluded (never retried).
+     */
+    private static boolean isTransientConnectionError(Throwable error) {
+        if (error instanceof WebClientResponseException) {
+            return false;
+        }
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof WebClientRequestException || cause instanceof IOException) {
+                return true;
+            }
+            // reactor.netty.http.client.PrematureCloseException (avoid a hard dependency).
+            if (cause.getClass().getName().contains("PrematureCloseException")) {
+                return true;
+            }
+            if (cause == cause.getCause()) {
+                break;
+            }
+        }
+        return false;
     }
 
     private URI resolveUri(String baseUrl, String path, MultiValueMap<String, String> queryParams) {

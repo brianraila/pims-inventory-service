@@ -23,7 +23,7 @@ class PurchaseOrderControllerTest extends AbstractInventoryControllerTest {
         List<PurchaseOrderResponse> orders = List.of(
                 poResponse("PO-001", "Supplier A"),
                 poResponse("PO-002", "Supplier B"));
-        when(purchaseOrderService.listPurchaseOrders(eq("t1"))).thenReturn(Mono.just(orders));
+        when(purchaseOrderService.listPurchaseOrders(eq("t1"), any())).thenReturn(Mono.just(orders));
 
         client.get().uri(BASE)
                 .accept(MediaType.APPLICATION_JSON)
@@ -38,7 +38,7 @@ class PurchaseOrderControllerTest extends AbstractInventoryControllerTest {
 
     @Test
     void listPurchaseOrders_returns_empty_array_when_no_orders() {
-        when(purchaseOrderService.listPurchaseOrders(eq("t1"))).thenReturn(Mono.just(List.of()));
+        when(purchaseOrderService.listPurchaseOrders(eq("t1"), any())).thenReturn(Mono.just(List.of()));
 
         client.get().uri(BASE)
                 .accept(MediaType.APPLICATION_JSON)
@@ -89,7 +89,7 @@ class PurchaseOrderControllerTest extends AbstractInventoryControllerTest {
     void createPurchaseOrder_includes_optional_fields_when_provided() {
         PurchaseOrderResponse created = new PurchaseOrderResponse(
                 "PO-FULL-001", "PO-FULL-001", "Supplier D",
-                "2024-01-15", "2024-02-15", null, "Draft", 2, 5000.0);
+                "2024-01-15", "2024-02-15", null, "Draft", 2, 2.0, 5000.0, 0.0, 0.0);
         when(purchaseOrderService.createPurchaseOrder(eq("t1"), any()))
                 .thenReturn(Mono.just(created));
 
@@ -108,6 +108,6 @@ class PurchaseOrderControllerTest extends AbstractInventoryControllerTest {
 
     private PurchaseOrderResponse poResponse(String id, String supplier) {
         return new PurchaseOrderResponse(id, id, supplier, "2024-01-15", "2024-02-15",
-                null, "Draft", 1, 1000.0);
+                null, "Draft", 1, 1.0, 1000.0, 0.0, 0.0);
     }
 }

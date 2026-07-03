@@ -35,10 +35,12 @@ public class PurchaseOrderController {
     }
 
     @GetMapping
-    @Operation(summary = "List purchase orders for the tenant")
-    public Mono<List<PurchaseOrderResponse>> listPurchaseOrders(Authentication auth, ServerWebExchange exchange) {
+    @Operation(summary = "List purchase orders for the tenant (optional supplier filter)")
+    public Mono<List<PurchaseOrderResponse>> listPurchaseOrders(
+            Authentication auth, ServerWebExchange exchange,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String supplier) {
         return tenantContextResolver.resolveTenantId(auth, exchange)
-                .flatMap(purchaseOrderService::listPurchaseOrders);
+                .flatMap(tenantId -> purchaseOrderService.listPurchaseOrders(tenantId, supplier));
     }
 
     @PostMapping
@@ -50,5 +52,52 @@ public class PurchaseOrderController {
             ServerWebExchange exchange) {
         return tenantContextResolver.resolveTenantId(auth, exchange)
                 .flatMap(tenantId -> purchaseOrderService.createPurchaseOrder(tenantId, request));
+    }
+
+    @org.springframework.web.bind.annotation.GetMapping("/{id}")
+    @Operation(summary = "Get a purchase order with its line items")
+    public Mono<ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderDetail> getPurchaseOrder(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.getPurchaseOrder(tenantId, id));
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/{id}")
+    @Operation(summary = "Update a draft purchase order (rejected once submitted)")
+    public Mono<ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderDetail> updatePurchaseOrder(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            @Valid @RequestBody ke.co.safaricom.pims.inventory.api.dto.UpdatePurchaseOrderRequest request,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.updatePurchaseOrder(tenantId, id, request));
+    }
+
+    @PostMapping("/{id}/submit")
+    @Operation(summary = "Submit a draft purchase order (finalise; no further edits)")
+    public Mono<ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderDetail> submitPurchaseOrder(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.submitPurchaseOrder(tenantId, id));
+    }
+
+    @org.springframework.web.bind.annotation.GetMapping("/{id}/receipts")
+    @Operation(summary = "List purchase receipts posted against this purchase order")
+    public Mono<List<ke.co.safaricom.pims.inventory.api.dto.ReceiptSummary>> listReceipts(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.listReceipts(tenantId, id));
+    }
+
+    @PostMapping("/{id}/receive")
+    @Operation(summary = "Receive stock against a submitted purchase order (creates a Purchase Receipt)")
+    public Mono<ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderDetail> receiveStock(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            @Valid @RequestBody ke.co.safaricom.pims.inventory.api.dto.ReceiveStockRequest request,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.receiveStock(tenantId, id, request));
     }
 }

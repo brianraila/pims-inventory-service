@@ -15,6 +15,7 @@ public record ErpNextDoc(
         String owner,
         @JsonProperty("creation") String creation,
         @JsonProperty("modified") String modified,
+        @JsonProperty("modified_by") String modifiedBy,
         @JsonProperty("docstatus") Integer docstatus,
         @JsonProperty("title") String taxTemplateTitle,
         @JsonProperty("is_default") Integer isDefault,
@@ -70,6 +71,13 @@ public record ErpNextDoc(
 
         // --- Supplier ---
         @JsonProperty("supplier_name") String supplierName,
+        @JsonProperty("supplier_group") String supplierGroup,
+        @JsonProperty("supplier_type") String supplierType,
+        @JsonProperty("tax_id") String taxId,
+        @JsonProperty("supplier_details") String supplierDetails,
+        @JsonProperty("country") String country,
+        @JsonProperty("supplier_group_name") String supplierGroupName,
+        @JsonProperty("parent_supplier_group") String parentSupplierGroup,
 
         // --- Warehouse ---
         @JsonProperty("warehouse_name") String warehouseName,
@@ -94,6 +102,9 @@ public record ErpNextDoc(
         @JsonProperty("schedule_date") String scheduleDate,
         @JsonProperty("grand_total") Double grandTotal,
         @JsonProperty("items_count") Integer itemsCount,
+        @JsonProperty("total_qty") Double totalQty,
+        @JsonProperty("per_received") Double perReceived,
+        @JsonProperty("per_billed") Double perBilled,
 
         // --- Sales Invoice / Tax Template ---
         @JsonProperty("company") String company,
