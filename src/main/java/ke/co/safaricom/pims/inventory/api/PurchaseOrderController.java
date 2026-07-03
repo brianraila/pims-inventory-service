@@ -35,10 +35,12 @@ public class PurchaseOrderController {
     }
 
     @GetMapping
-    @Operation(summary = "List purchase orders for the tenant")
-    public Mono<List<PurchaseOrderResponse>> listPurchaseOrders(Authentication auth, ServerWebExchange exchange) {
+    @Operation(summary = "List purchase orders for the tenant (optional supplier filter)")
+    public Mono<List<PurchaseOrderResponse>> listPurchaseOrders(
+            Authentication auth, ServerWebExchange exchange,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String supplier) {
         return tenantContextResolver.resolveTenantId(auth, exchange)
-                .flatMap(purchaseOrderService::listPurchaseOrders);
+                .flatMap(tenantId -> purchaseOrderService.listPurchaseOrders(tenantId, supplier));
     }
 
     @PostMapping

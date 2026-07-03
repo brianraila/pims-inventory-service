@@ -33,10 +33,14 @@ public class PurchaseOrderService {
         this.mapper = mapper;
     }
 
-    public Mono<List<PurchaseOrderResponse>> listPurchaseOrders(String tenantId) {
+    public Mono<List<PurchaseOrderResponse>> listPurchaseOrders(String tenantId, String supplier) {
         Map<String, String> params = new HashMap<>();
         params.put(PARAM_FIELDS, PO_FIELDS);
         params.put("order_by", "transaction_date desc");
+        if (supplier != null && !supplier.isBlank()) {
+            String s = supplier.replace("\"", "").trim();
+            params.put("filters", "[[\"supplier\",\"=\",\"" + s + "\"]]");
+        }
 
         return router.getList(tenantId, DOCTYPE_PURCHASE_ORDER, params, LIST_TYPE)
                 .map(response -> response.data().stream()
