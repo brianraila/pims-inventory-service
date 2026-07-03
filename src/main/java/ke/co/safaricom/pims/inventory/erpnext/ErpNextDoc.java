@@ -102,6 +102,7 @@ public record ErpNextDoc(
         @JsonProperty("schedule_date") String scheduleDate,
         @JsonProperty("grand_total") Double grandTotal,
         @JsonProperty("items_count") Integer itemsCount,
+        @JsonProperty("total_qty") Double totalQty,
 
         // --- Sales Invoice / Tax Template ---
         @JsonProperty("company") String company,

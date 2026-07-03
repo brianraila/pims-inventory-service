@@ -19,6 +19,7 @@ public class PurchaseOrderMapper {
                 null,
                 safeStr(doc.status()),
                 itemsCount,
+                doc.totalQty() != null ? doc.totalQty() : 0,
                 doc.grandTotal() != null ? doc.grandTotal() : 0
         );
     }

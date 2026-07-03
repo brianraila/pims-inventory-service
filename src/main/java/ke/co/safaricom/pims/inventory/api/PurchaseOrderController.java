@@ -53,4 +53,32 @@ public class PurchaseOrderController {
         return tenantContextResolver.resolveTenantId(auth, exchange)
                 .flatMap(tenantId -> purchaseOrderService.createPurchaseOrder(tenantId, request));
     }
+
+    @org.springframework.web.bind.annotation.GetMapping("/{id}")
+    @Operation(summary = "Get a purchase order with its line items")
+    public Mono<ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderDetail> getPurchaseOrder(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.getPurchaseOrder(tenantId, id));
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/{id}")
+    @Operation(summary = "Update a draft purchase order (rejected once submitted)")
+    public Mono<ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderDetail> updatePurchaseOrder(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            @Valid @RequestBody ke.co.safaricom.pims.inventory.api.dto.UpdatePurchaseOrderRequest request,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.updatePurchaseOrder(tenantId, id, request));
+    }
+
+    @PostMapping("/{id}/submit")
+    @Operation(summary = "Submit a draft purchase order (finalise; no further edits)")
+    public Mono<ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderDetail> submitPurchaseOrder(
+            @org.springframework.web.bind.annotation.PathVariable String id,
+            Authentication auth, ServerWebExchange exchange) {
+        return tenantContextResolver.resolveTenantId(auth, exchange)
+                .flatMap(tenantId -> purchaseOrderService.submitPurchaseOrder(tenantId, id));
+    }
 }
