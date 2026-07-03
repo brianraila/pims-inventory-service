@@ -30,7 +30,8 @@ public class PurchaseOrderService {
     private static final String PARAM_FIELDS = "fields";
 
     private static final String PO_FIELDS =
-            "[\"name\",\"supplier\",\"transaction_date\",\"schedule_date\",\"status\",\"total_qty\",\"grand_total\"]";
+            "[\"name\",\"supplier\",\"transaction_date\",\"schedule_date\",\"status\",\"total_qty\","
+                    + "\"grand_total\",\"per_received\",\"per_billed\"]";
 
     private final ErpNextTenantRouter router;
     private final PurchaseOrderMapper mapper;

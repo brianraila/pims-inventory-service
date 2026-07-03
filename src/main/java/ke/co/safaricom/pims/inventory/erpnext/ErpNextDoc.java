@@ -103,6 +103,8 @@ public record ErpNextDoc(
         @JsonProperty("grand_total") Double grandTotal,
         @JsonProperty("items_count") Integer itemsCount,
         @JsonProperty("total_qty") Double totalQty,
+        @JsonProperty("per_received") Double perReceived,
+        @JsonProperty("per_billed") Double perBilled,
 
         // --- Sales Invoice / Tax Template ---
         @JsonProperty("company") String company,
