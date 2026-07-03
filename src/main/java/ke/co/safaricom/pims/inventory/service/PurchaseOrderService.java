@@ -1,17 +1,21 @@
 package ke.co.safaricom.pims.inventory.service;
 
 import ke.co.safaricom.pims.inventory.api.dto.CreatePurchaseOrderRequest;
+import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.api.dto.PurchaseOrderResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
+import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
 import ke.co.safaricom.pims.inventory.mapper.PurchaseOrderMapper;
+import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,10 +31,13 @@ public class PurchaseOrderService {
 
     private final ErpNextTenantRouter router;
     private final PurchaseOrderMapper mapper;
+    private final InventoryService inventoryService;
 
-    public PurchaseOrderService(ErpNextTenantRouter router, PurchaseOrderMapper mapper) {
+    public PurchaseOrderService(ErpNextTenantRouter router, PurchaseOrderMapper mapper,
+                                InventoryService inventoryService) {
         this.router = router;
         this.mapper = mapper;
+        this.inventoryService = inventoryService;
     }
 
     public Mono<List<PurchaseOrderResponse>> listPurchaseOrders(String tenantId, String supplier) {
@@ -49,25 +56,44 @@ public class PurchaseOrderService {
     }
 
     public Mono<PurchaseOrderResponse> createPurchaseOrder(String tenantId, CreatePurchaseOrderRequest request) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("doctype", DOCTYPE_PURCHASE_ORDER);
-        body.put("supplier", request.supplier());
-        body.put("transaction_date", request.transactionDate() != null
-                ? request.transactionDate() : LocalDate.now().toString());
-        if (request.scheduleDate() != null) body.put("schedule_date", request.scheduleDate());
-        if (request.notes() != null) body.put("remarks", request.notes());
-        body.put("items", request.items().stream().map(this::toErpLineItem).toList());
+        String transactionDate = request.transactionDate() != null
+                ? request.transactionDate() : LocalDate.now().toString();
+        // ERPNext requires a delivery/required-by date on each PO line; fall back to the order date.
+        String scheduleDate = request.scheduleDate() != null ? request.scheduleDate() : transactionDate;
 
-        return router.create(tenantId, DOCTYPE_PURCHASE_ORDER, body, SINGLE_TYPE)
-                .map(response -> mapper.toResponse(response.data()));
-    }
+        // The frontend sends stable product ids (StableEntityIds), not raw ERPNext item codes —
+        // resolve them the same way sales orders do, else ERPNext rejects "Item Code not found".
+        return inventoryService.listItems(tenantId).flatMap(allItems -> {
+            List<Map<String, Object>> erpItems = new ArrayList<>();
+            for (CreatePurchaseOrderRequest.LineItem line : request.items()) {
+                InventoryItemResponse match = allItems.stream()
+                        .filter(it -> StableEntityIds.itemId(tenantId, it.id()).toString().equals(line.itemCode()))
+                        .findFirst()
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Product not found: " + line.itemCode()));
+                Map<String, Object> item = new HashMap<>();
+                item.put("item_code", match.id());
+                item.put("item_name", match.name());
+                item.put("qty", line.qty());
+                item.put("schedule_date", scheduleDate);
+                if (line.rate() != null) {
+                    item.put("rate", line.rate());
+                    item.put("allow_zero_valuation_rate", 1);
+                }
+                erpItems.add(item);
+            }
 
-    private Map<String, Object> toErpLineItem(CreatePurchaseOrderRequest.LineItem line) {
-        Map<String, Object> item = new HashMap<>();
-        item.put("item_code", line.itemCode());
-        item.put("qty", line.qty());
-        if (line.rate() != null) item.put("rate", line.rate());
-        return item;
+            Map<String, Object> body = new HashMap<>();
+            body.put("doctype", DOCTYPE_PURCHASE_ORDER);
+            body.put("supplier", request.supplier());
+            body.put("transaction_date", transactionDate);
+            body.put("schedule_date", scheduleDate);
+            if (request.notes() != null) body.put("remarks", request.notes());
+            body.put("items", erpItems);
+
+            return router.create(tenantId, DOCTYPE_PURCHASE_ORDER, body, SINGLE_TYPE)
+                    .map(response -> mapper.toResponse(response.data()));
+        });
     }
 
     private static final ParameterizedTypeReference<ErpNextListResponse<ErpNextDoc>> LIST_TYPE =
