@@ -1,45 +1,10 @@
 spring:
   application:
     name: ms-pims-inventory-service
+  service:
+    name: ${spring.application.name}
 
   config:
-    import:
-      - "optional:consul:"
-
+    import: optional:configserver:http://fs-devops-configserver-svc.devops:8888
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
-
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    consumer:
-      group-id: ${KAFKA_CONSUMER_GROUP_ID:ms-pims-inventory-service}
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: ke.co.safaricom.pims.inventory.kafka.dto
-        spring.json.value.default.type: ke.co.safaricom.pims.inventory.kafka.dto.PaymentSuccessEvent
-
-erpnext:
-  wrapper:
-    url: ${ERPNEXT_WRAPPER_URL:}
-    tenant-id: ${ERPNEXT_WRAPPER_TENANT_ID:}
-
-kafka:
-  topic:
-    payment-success: ${PAYMENT_SUCCESS_KAFKA_TOPIC:payment-success}
-
-# Canonical REST contract: classpath static/openapi/inventory-api-v1.yaml (also linked in Swagger UI).
-# Generated /v3/api-docs is for convenience; external publishers should prefer the versioned YAML.
-springdoc:
-  api-docs:
-    path: /api/v1/inventory/v3/api-docs
-  swagger-ui:
-    path: /api/v1/inventory/swagger-ui.html
-    operationsSorter: method
-    tags-sorter: alpha
-    urls:
-      - name: Inventory API contract (YAML)
-        url: /openapi/inventory-api-v1.yaml
-      - name: Live service (generated)
-        url: /api/v1/inventory/v3/api-docs
