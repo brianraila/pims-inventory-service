@@ -1,4 +1,11 @@
 spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: ms-pims-inventory-service-dev
+    listener:
+      auto-startup: false
+
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.security.reactive.ReactiveSecurityAutoConfiguration
