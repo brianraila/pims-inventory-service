@@ -1054,6 +1054,12 @@ public class ProductInventoryService {
         double totalValue = batches.stream().filter(ProductInventoryService::isUsable)
                 .mapToDouble(b -> b.quantity() * b.cost()).sum();
         Double sellingPrice = sellingPrices.getOrDefault(it.id(), null);
+        double reorder = ex.containsKey("reorder_level")
+                ? toDouble(ex.get("reorder_level"))
+                : it.reorderLevel();
+        List<InventoryApiSchemas.ProductListBatch> listBatches = batches.stream()
+                .map(b -> toProductListBatch(b, uom))
+                .toList();
         return new InventoryApiSchemas.ProductSummary(
                 StableEntityIds.itemId(tenantId, it.id()),
                 it.name(),
@@ -1072,7 +1078,9 @@ public class ProductInventoryService {
                 tradeCostAvg,
                 totalValue > 0 ? totalValue : null,
                 sellingPrice,
-                orderFrequency);
+                orderFrequency,
+                reorder,
+                listBatches);
     }
 
     private static Double weightedAverageUnitCost(List<BatchResponse> batches) {
@@ -1206,6 +1214,31 @@ public class ProductInventoryService {
             s.add(Enums.ProductStatus.expiring_soon);
         }
         return s;
+    }
+
+    private InventoryApiSchemas.ProductListBatch toProductListBatch(
+            BatchResponse b, Enums.UnitOfMeasure uom) {
+        double unitValue = b.cost() > 0 ? b.cost() : b.tradeCost();
+        return new InventoryApiSchemas.ProductListBatch(
+                b.batchNumber(),
+                b.quantity(),
+                uom,
+                unitValue,
+                b.quantity() * unitValue,
+                b.receivedDate(),
+                b.expiryDate(),
+                mapBatchStatusString(b.status()));
+    }
+
+    private static String mapBatchStatusString(String legacy) {
+        if (legacy == null) return "active";
+        return switch (legacy) {
+            case "expired" -> "expired";
+            case "recalled" -> "recalled";
+            case "quarantined" -> "quarantine";
+            case "expiring-soon", "available" -> "active";
+            default -> "active";
+        };
     }
 
     private InventoryApiSchemas.Batch toApiBatch(String tenantId, String itemCode, BatchResponse b) {

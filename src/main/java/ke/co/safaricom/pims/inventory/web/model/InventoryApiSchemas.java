@@ -42,6 +42,18 @@ public final class InventoryApiSchemas {
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ProductListBatch(
+            String batchNumber,
+            double quantity,
+            Enums.UnitOfMeasure unitOfMeasure,
+            double unitValue,
+            double stockValue,
+            String manufactureDate,
+            String expiryDate,
+            String status) {}
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ProductSummary(
             java.util.UUID id,
             String productName,
@@ -60,7 +72,9 @@ public final class InventoryApiSchemas {
             Double tradeCost,
             Double totalValue,
             Double sellingPrice,
-            Double orderFrequency) {}
+            Double orderFrequency,
+            double reorderLevel,
+            List<ProductListBatch> batches) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)

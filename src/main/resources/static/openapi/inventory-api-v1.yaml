@@ -25,6 +25,7 @@ tags:
   - name: Batches
   - name: Stock Adjustments
   - name: Purchase Orders
+  - name: Sales
   - name: Terminology Service
   - name: Manufacturers
   - name: Categories
@@ -247,6 +248,39 @@ paths:
       responses:
         '204':
           description: Deleted
+
+  /inventory/sales:
+    get:
+      tags: [Sales]
+      operationId: getSalesReport
+      summary: Sales report aggregated by product and month
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+            description: Inclusive start date (YYYY-MM-DD)
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+            description: Inclusive end date (YYYY-MM-DD)
+        - name: status
+          in: query
+          schema:
+            type: string
+            description: Invoice status filter (e.g. submitted, draft, Paid)
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated sales analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesReportResponse'
 
   /inventory/products/{product_id}/batches:
     get:
@@ -644,6 +678,37 @@ components:
             $ref: '#/components/schemas/ProductSummary'
         pagination:
           $ref: '#/components/schemas/Pagination'
+
+    SalesReportResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SalesRow'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        summary:
+          $ref: '#/components/schemas/SalesSummary'
+
+    SalesRow:
+      type: object
+      properties:
+        period: { type: string, example: "2026-01" }
+        product_id: { type: string, format: uuid }
+        product_name: { type: string }
+        generic_name: { type: string }
+        category: { type: string }
+        units_sold: { type: integer }
+        revenue: { type: number, format: double }
+        currency: { type: string, example: KES }
+
+    SalesSummary:
+      type: object
+      properties:
+        total_revenue: { type: number, format: double }
+        total_units: { type: integer }
+        currency: { type: string, example: KES }
 
     Batch:
       type: object
