@@ -138,6 +138,27 @@ class ProductInventoryServiceTest {
     }
 
     @Test
+    void listProducts_includes_reorder_level_and_batches() {
+        stubListItemsAndBatches(ITEM_CODE, 250.0);
+
+        StepVerifier.create(service.listProducts(TENANT, 1, 10, null, null, null, null, "most_ordered", null, "qty"))
+                .assertNext(resp -> {
+                    InventoryApiSchemas.ProductSummary product = resp.data().get(0);
+                    assertThat(product.reorderLevel()).isEqualTo(50.0);
+                    assertThat(product.batches()).hasSize(1);
+                    InventoryApiSchemas.ProductListBatch batch = product.batches().get(0);
+                    assertThat(batch.batchNumber()).isEqualTo("BATCH-b1");
+                    assertThat(batch.quantity()).isEqualTo(250.0);
+                    assertThat(batch.unitValue()).isEqualTo(10.0);
+                    assertThat(batch.stockValue()).isEqualTo(2500.0);
+                    assertThat(batch.manufactureDate()).isEqualTo("2024-01-01");
+                    assertThat(batch.expiryDate()).isEqualTo("2026-12-31");
+                    assertThat(batch.status()).isEqualTo("active");
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void listProducts_includes_available_quantity_distinct_from_total_stock() {
         stubListItemsAndBatches(ITEM_CODE, 100.0);
 
