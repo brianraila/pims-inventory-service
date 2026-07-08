@@ -7,6 +7,7 @@ import ke.co.safaricom.pims.inventory.service.CategoryService;
 import ke.co.safaricom.pims.inventory.service.OrderPaymentService;
 import ke.co.safaricom.pims.inventory.service.PurchaseOrderService;
 import ke.co.safaricom.pims.inventory.service.ReceiptService;
+import ke.co.safaricom.pims.inventory.service.RevenueAnalyticsService;
 import ke.co.safaricom.pims.inventory.service.RevenueReportService;
 import ke.co.safaricom.pims.inventory.service.SalesOrderService;
 import ke.co.safaricom.pims.inventory.service.SalesReportService;
@@ -17,6 +18,7 @@ import ke.co.safaricom.pims.inventory.web.api.InventoryBatchController;
 import ke.co.safaricom.pims.inventory.web.api.InventoryCategoryController;
 import ke.co.safaricom.pims.inventory.web.api.InventoryProductController;
 import ke.co.safaricom.pims.inventory.web.api.ManufacturersController;
+import ke.co.safaricom.pims.inventory.web.api.RevenueAnalyticsController;
 import ke.co.safaricom.pims.inventory.web.api.RevenueReportController;
 import ke.co.safaricom.pims.inventory.web.api.SalesOrderController;
 import ke.co.safaricom.pims.inventory.web.api.SalesReportController;
@@ -51,6 +53,7 @@ import static org.mockito.Mockito.when;
             SalesReportController.class,
             StockReportController.class,
             RevenueReportController.class,
+            RevenueAnalyticsController.class,
             ManufacturersController.class,
             InventoryAdjustmentController.class,
             PurchaseOrderController.class,
@@ -81,6 +84,9 @@ public abstract class AbstractInventoryControllerTest {
 
     @MockBean
     protected RevenueReportService revenueReportService;
+
+    @MockBean
+    protected RevenueAnalyticsService revenueAnalyticsService;
 
     @MockBean
     protected OrderPaymentService orderPaymentService;
