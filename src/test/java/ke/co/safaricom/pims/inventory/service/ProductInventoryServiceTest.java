@@ -293,6 +293,8 @@ class ProductInventoryServiceTest {
                     assertThat(resp.data().get(1).productName()).isEqualTo("Alpha Drug");
                     assertThat(resp.data().get(0).orderFrequency()).isEqualTo(200.0);
                     assertThat(resp.data().get(1).orderFrequency()).isEqualTo(30.0);
+                    assertThat(resp.data().get(0).itemsSold()).isEqualTo(200.0);
+                    assertThat(resp.data().get(1).itemsSold()).isEqualTo(30.0);
                 })
                 .verifyComplete();
     }
@@ -775,7 +777,7 @@ class ProductInventoryServiceTest {
 
         UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
         InventoryApiSchemas.CreateBatchRequest req = new InventoryApiSchemas.CreateBatchRequest(
-                "BATCH-99", "2027-01-01", "Supplier A", 100.0, null, 10.0, "Main Warehouse", null, null);
+                "BATCH-99", "2027-01-01", "Supplier A", 100.0, null, 10.0, "Main Warehouse", null, null, null, null);
 
         StepVerifier.create(service.addBatchJsonReturn(TENANT, productId, req))
                 .assertNext(b -> assertThat(b.batchNumber()).isEqualTo("BATCH-99"))
@@ -783,10 +785,77 @@ class ProductInventoryServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void addBatchJsonReturn_with_selling_price_upserts_item_price() {
+        InventoryItemResponse itemResp = item(ITEM_CODE);
+        BatchResponse createdBatch = new BatchResponse(
+                "erp-b99", "BATCH-99", ITEM_CODE, 100.0, "available",
+                "2027-01-01", null, "Main Warehouse", null, "2024-01-01", 10.0, 0.0, "Supplier A", null);
+        when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
+        when(router.create(eq(TENANT), eq("Batch"), anyMap(), eq(SINGLE_TYPE)))
+                .thenReturn(Mono.just(singleResponse(itemDoc("erp-b99"))));
+        when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of(createdBatch)));
+        when(router.getList(eq(TENANT), eq("Item Price"), anyMap(), any(org.springframework.core.ParameterizedTypeReference.class)))
+                .thenReturn(Mono.just(new ErpNextListResponse<>(List.of())));
+        when(router.create(eq(TENANT), eq("Item Price"), anyMap(), eq(SINGLE_TYPE)))
+                .thenReturn(Mono.just(singleResponse(itemDoc("IP-001"))));
+
+        UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
+        InventoryApiSchemas.CreateBatchRequest req = new InventoryApiSchemas.CreateBatchRequest(
+                "BATCH-99", "2027-01-01", "Supplier A", 100.0, null, 10.0, "Main Warehouse", null, null, null, 15.5);
+
+        StepVerifier.create(service.addBatchJsonReturn(TENANT, productId, req))
+                .assertNext(b -> assertThat(b.batchNumber()).isEqualTo("BATCH-99"))
+                .verifyComplete();
+
+        verify(router).create(eq(TENANT), eq("Item Price"), argThat(body -> {
+            Map<String, Object> map = (Map<String, Object>) body;
+            return ITEM_CODE.equals(map.get("item_code")) && Double.valueOf(15.5).equals(map.get("price_list_rate"));
+        }), eq(SINGLE_TYPE));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addBatchJsonReturn_with_markup_derives_selling_price_from_unit_cost() {
+        InventoryItemResponse itemResp = item(ITEM_CODE);
+        BatchResponse createdBatch = new BatchResponse(
+                "erp-b99", "BATCH-99", ITEM_CODE, 100.0, "available",
+                "2027-01-01", null, "Main Warehouse", null, "2024-01-01", 10.0, 0.0, "Supplier A", null);
+        when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
+        when(router.create(eq(TENANT), eq("Batch"), anyMap(), eq(SINGLE_TYPE)))
+                .thenReturn(Mono.just(singleResponse(itemDoc("erp-b99"))));
+        when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of(createdBatch)));
+        when(router.getList(eq(TENANT), eq("Item Price"), anyMap(), any(org.springframework.core.ParameterizedTypeReference.class)))
+                .thenReturn(Mono.just(new ErpNextListResponse<>(List.of())));
+        when(router.create(eq(TENANT), eq("Item Price"), anyMap(), eq(SINGLE_TYPE)))
+                .thenReturn(Mono.just(singleResponse(itemDoc("IP-001"))));
+
+        UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
+        InventoryApiSchemas.CreateBatchRequest req = new InventoryApiSchemas.CreateBatchRequest(
+                "BATCH-99", "2027-01-01", "Supplier A", 100.0, null, 10.0, "Main Warehouse", null, null, 30.0, null);
+
+        StepVerifier.create(service.addBatchJsonReturn(TENANT, productId, req))
+                .assertNext(b -> assertThat(b.batchNumber()).isEqualTo("BATCH-99"))
+                .verifyComplete();
+
+        verify(router).create(eq(TENANT), eq("Item Price"), argThat(body -> {
+            Map<String, Object> map = (Map<String, Object>) body;
+            return Double.valueOf(13.0).equals(map.get("price_list_rate"));
+        }), eq(SINGLE_TYPE));
+    }
+
+    @Test
+    void resolveSellingPrice_prefers_explicit_selling_price_over_markup() {
+        assertThat(ProductInventoryService.resolveSellingPrice(10.0, 30.0, 20.0)).isEqualTo(20.0);
+        assertThat(ProductInventoryService.resolveSellingPrice(10.0, 30.0, null)).isEqualTo(13.0);
+        assertThat(ProductInventoryService.resolveSellingPrice(10.0, null, null)).isNull();
+    }
+
+    @Test
     void addBatchJsonReturn_rejects_zero_quantity() {
         UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
         InventoryApiSchemas.CreateBatchRequest req = new InventoryApiSchemas.CreateBatchRequest(
-                "BATCH-99", "2027-01-01", "Supplier A", 0.0, null, 10.0, WAREHOUSE, null, null);
+                "BATCH-99", "2027-01-01", "Supplier A", 0.0, null, 10.0, WAREHOUSE, null, null, null, null);
 
         StepVerifier.create(Mono.defer(() -> service.addBatchJsonReturn(TENANT, productId, req)))
                 .expectErrorSatisfies(err -> {
@@ -800,7 +869,7 @@ class ProductInventoryServiceTest {
     void addBatchJsonReturn_rejects_negative_quantity() {
         UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
         InventoryApiSchemas.CreateBatchRequest req = new InventoryApiSchemas.CreateBatchRequest(
-                "BATCH-99", "2027-01-01", "Supplier A", -5.0, null, 10.0, WAREHOUSE, null, null);
+                "BATCH-99", "2027-01-01", "Supplier A", -5.0, null, 10.0, WAREHOUSE, null, null, null, null);
 
         StepVerifier.create(Mono.defer(() -> service.addBatchJsonReturn(TENANT, productId, req)))
                 .expectError(ServiceValidationException.class)
@@ -811,7 +880,7 @@ class ProductInventoryServiceTest {
     void addBatchJsonReturn_throws_when_batch_number_missing() {
         UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
         InventoryApiSchemas.CreateBatchRequest req = new InventoryApiSchemas.CreateBatchRequest(
-                null, "2027-01-01", "Supplier A", 100.0, null, 10.0, "Main Warehouse", null, null);
+                null, "2027-01-01", "Supplier A", 100.0, null, 10.0, "Main Warehouse", null, null, null, null);
 
         StepVerifier.create(Mono.defer(() -> service.addBatchJsonReturn(TENANT, productId, req)))
                 .expectError(ServiceValidationException.class)
@@ -921,7 +990,7 @@ class ProductInventoryServiceTest {
         UUID batchId = StableEntityIds.batchId(TENANT, "erp-b1");
 
         InventoryApiSchemas.StockAdjustmentRequest req = new InventoryApiSchemas.StockAdjustmentRequest(
-                batchId, Enums.AdjustmentDirection.increase, 10.0, Enums.AdjustmentReason.correction, null, null);
+                batchId, Enums.AdjustmentDirection.increase, 10.0, Enums.AdjustmentReason.correction, null, null, null, null);
 
         StepVerifier.create(service.adjustStock(TENANT, productId, req, "user@test.com", "Test User"))
                 .assertNext(adj -> {
@@ -931,6 +1000,37 @@ class ProductInventoryServiceTest {
                     assertThat(adj.quantityAfter()).isEqualTo(60.0);
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void adjustStock_increase_with_selling_price_upserts_item_price() {
+        InventoryItemResponse itemResp = item(ITEM_CODE);
+        BatchResponse batchResp = batch("erp-b1", ITEM_CODE, 50.0, "2026-12-31");
+        StockAdjustmentResponse adjResp = adjustment("adj-new", "addition", 10.0, ITEM_CODE);
+        when(inventoryService.listItems(TENANT)).thenReturn(Mono.just(List.of(itemResp)));
+        when(inventoryService.listBatches(TENANT)).thenReturn(Mono.just(List.of(batchResp)));
+        when(inventoryService.createAdjustment(eq(TENANT), any(CreateStockAdjustmentRequest.class)))
+                .thenReturn(Mono.just(adjResp));
+        when(router.getList(eq(TENANT), eq("Item Price"), anyMap(), any(org.springframework.core.ParameterizedTypeReference.class)))
+                .thenReturn(Mono.just(new ErpNextListResponse<>(List.of())));
+        when(router.create(eq(TENANT), eq("Item Price"), anyMap(), eq(SINGLE_TYPE)))
+                .thenReturn(Mono.just(singleResponse(itemDoc("IP-001"))));
+
+        UUID productId = StableEntityIds.itemId(TENANT, ITEM_CODE);
+        UUID batchId = StableEntityIds.batchId(TENANT, "erp-b1");
+
+        InventoryApiSchemas.StockAdjustmentRequest req = new InventoryApiSchemas.StockAdjustmentRequest(
+                batchId, Enums.AdjustmentDirection.increase, 10.0, Enums.AdjustmentReason.correction, null, null, null, 18.0);
+
+        StepVerifier.create(service.adjustStock(TENANT, productId, req, "user@test.com", "Test User"))
+                .assertNext(adj -> assertThat(adj.adjustmentType()).isEqualTo(Enums.AdjustmentDirection.increase))
+                .verifyComplete();
+
+        verify(router).create(eq(TENANT), eq("Item Price"), argThat(body -> {
+            Map<String, Object> map = (Map<String, Object>) body;
+            return Double.valueOf(18.0).equals(map.get("price_list_rate"));
+        }), eq(SINGLE_TYPE));
     }
 
     @Test
@@ -944,7 +1044,7 @@ class ProductInventoryServiceTest {
         UUID batchId = StableEntityIds.batchId(TENANT, "erp-b1");
 
         InventoryApiSchemas.StockAdjustmentRequest req = new InventoryApiSchemas.StockAdjustmentRequest(
-                batchId, Enums.AdjustmentDirection.decrease, 5.0, Enums.AdjustmentReason.damaged, null, null);
+                batchId, Enums.AdjustmentDirection.decrease, 5.0, Enums.AdjustmentReason.damaged, null, null, null, null);
 
         StepVerifier.create(service.adjustStock(TENANT, productId, req, "user@test.com", "Test User"))
                 .expectError(ServiceValidationException.class)

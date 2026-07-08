@@ -52,10 +52,10 @@ public class ProductInventoryService {
     private static final ParameterizedTypeReference<ErpNextListResponse<Map<String, Object>>> LIST_MAP_TYPE =
             new ParameterizedTypeReference<>() {};
 
-    /** Per-instance cache: tenantId:sortDays:rankBy → aggregated order frequency per item_code. */
-    private final Map<String, CacheEntry> orderFreqCache = new ConcurrentHashMap<>();
+    /** Per-instance cache: tenantId:sortDays:rankBy → sales sort metrics. */
+    private final Map<String, SortMetricsCacheEntry> sortMetricsCache = new ConcurrentHashMap<>();
 
-    private record CacheEntry(Map<String, Double> data, long expiresAt) {
+    private record SortMetricsCacheEntry(SalesSortMetrics data, long expiresAt) {
         boolean isAlive() { return System.currentTimeMillis() < expiresAt; }
     }
 
@@ -121,12 +121,14 @@ public class ProductInventoryService {
                     List<String> itemCodes = items.stream().map(InventoryItemResponse::id).toList();
                     return Mono.zip(
                             inventoryService.getStockLevels(tenantId, itemCodes, inventoryService.defaultWarehouse()),
-                            fetchOrderFrequency(tenantId, sort, sortDays, rankBy),
+                            fetchSalesSortMetrics(tenantId, sort, sortDays, rankBy),
                             inventoryService.getSellingPrices(tenantId, itemCodes)
                                     .onErrorReturn(Map.of()))
                             .map(stockTuple -> {
                                 Map<String, Double> stockLevels = stockTuple.getT1();
-                                Map<String, Double> orderFreq  = stockTuple.getT2();
+                                SalesSortMetrics metrics = stockTuple.getT2();
+                                Map<String, Double> orderFreq = metrics.orderFrequency();
+                                Map<String, Double> itemsSoldByCode = metrics.itemsSold();
                                 Map<String, Double> sellingPrices = stockTuple.getT3();
 
                                 Map<String, List<BatchResponse>> byItem =
@@ -149,8 +151,11 @@ public class ProductInventoryService {
                                     Double frequency = includeOrderFrequency
                                             ? orderFreqByUuid.getOrDefault(productUuid, 0.0)
                                             : null;
+                                    Double itemsSold = includeOrderFrequency
+                                            ? itemsSoldByCode.getOrDefault(it.id(), 0.0)
+                                            : null;
                                     InventoryApiSchemas.ProductSummary p = toSummary(
-                                            tenantId, it, itemBatches, available, sellingPrices, frequency);
+                                            tenantId, it, itemBatches, available, sellingPrices, frequency, itemsSold);
                                     if (!matchesSearch(p, search, ex)) continue;
                                     if (category != null && !category.isBlank()
                                             && (p.category() == null || !p.category().equalsIgnoreCase(category))) continue;
@@ -191,44 +196,46 @@ public class ProductInventoryService {
      *   <li>the ERPNext call fails for any reason (warning is logged).</li>
      * </ul>
      */
-    private Mono<Map<String, Double>> fetchOrderFrequency(
+    private record SalesSortMetrics(Map<String, Double> orderFrequency, Map<String, Double> itemsSold) {}
+
+    private Mono<SalesSortMetrics> fetchSalesSortMetrics(
             String tenantId, String sort, Integer sortDays, String rankBy) {
         if ("alphabetical".equalsIgnoreCase(sort)) {
-            return Mono.just(Map.of());
+            return Mono.just(new SalesSortMetrics(Map.of(), Map.of()));
         }
         String normalizedRankBy = normalizeRankBy(rankBy);
         String cacheKey = orderFreqCacheKey(tenantId, sortDays, normalizedRankBy);
-        CacheEntry cached = orderFreqCache.get(cacheKey);
+        SortMetricsCacheEntry cached = sortMetricsCache.get(cacheKey);
         if (cached != null && cached.isAlive()) {
             return Mono.just(cached.data());
         }
-        return fetchAllSalesInvoiceItems(tenantId, sortDays, normalizedRankBy)
-                .map(rows -> aggregateOrderFrequency(rows, normalizedRankBy))
-                .map(freq -> {
-                    Map<String, Double> snapshot = Map.copyOf(freq);
-                    orderFreqCache.put(cacheKey,
-                            new CacheEntry(snapshot, System.currentTimeMillis() + ORDER_FREQ_TTL_MS));
-                    return snapshot;
+        return fetchAllSalesInvoiceItems(tenantId, sortDays)
+                .map(rows -> new SalesSortMetrics(
+                        aggregateOrderFrequency(rows, normalizedRankBy),
+                        aggregateItemsSold(rows)))
+                .map(metrics -> {
+                    sortMetricsCache.put(cacheKey,
+                            new SortMetricsCacheEntry(metrics, System.currentTimeMillis() + ORDER_FREQ_TTL_MS));
+                    return metrics;
                 })
                 .onErrorResume(ex -> {
                     logger.warn("Could not fetch Sales Invoice Items for order-frequency sort; " +
                             "falling back to alphabetical. Reason: {}", ex.getMessage());
-                    return Mono.just(Map.of());
+                    return Mono.just(new SalesSortMetrics(Map.of(), Map.of()));
                 });
     }
 
     private Mono<List<Map<String, Object>>> fetchAllSalesInvoiceItems(
-            String tenantId, Integer sortDays, String rankBy) {
-        return fetchSalesInvoiceItemPage(tenantId, sortDays, rankBy, 0, new ArrayList<>());
+            String tenantId, Integer sortDays) {
+        return fetchSalesInvoiceItemPage(tenantId, sortDays, 0, new ArrayList<>());
     }
 
     private Mono<List<Map<String, Object>>> fetchSalesInvoiceItemPage(
             String tenantId,
             Integer sortDays,
-            String rankBy,
             int offset,
             List<Map<String, Object>> accumulated) {
-        Map<String, String> params = buildSalesInvoiceItemParams(sortDays, rankBy, offset);
+        Map<String, String> params = buildSalesInvoiceItemParams(sortDays, offset);
         return router.getList(tenantId, "Sales Invoice Item", params, LIST_MAP_TYPE)
                 .flatMap(resp -> {
                     List<Map<String, Object>> page = resp.data();
@@ -237,15 +244,13 @@ public class ProductInventoryService {
                         return Mono.just(accumulated);
                     }
                     return fetchSalesInvoiceItemPage(
-                            tenantId, sortDays, rankBy, offset + page.size(), accumulated);
+                            tenantId, sortDays, offset + page.size(), accumulated);
                 });
     }
 
-    private static Map<String, String> buildSalesInvoiceItemParams(
-            Integer sortDays, String rankBy, int offset) {
+    private static Map<String, String> buildSalesInvoiceItemParams(Integer sortDays, int offset) {
         Map<String, String> params = new HashMap<>();
-        boolean byOrders = "orders".equalsIgnoreCase(rankBy);
-        params.put("fields", byOrders ? "[\"item_code\",\"parent\"]" : "[\"item_code\",\"qty\"]");
+        params.put("fields", "[\"item_code\",\"qty\",\"parent\"]");
         params.put("filters", buildSalesInvoiceItemFilters(sortDays));
         params.put("limit_page_length", String.valueOf(ORDER_FREQ_PAGE_SIZE));
         params.put("limit_start", String.valueOf(offset));
@@ -281,6 +286,16 @@ public class ProductInventoryService {
             freq.merge(code, toDoubleOrZero(row.get("qty")), Double::sum);
         }
         return freq;
+    }
+
+    private static Map<String, Double> aggregateItemsSold(List<Map<String, Object>> rows) {
+        Map<String, Double> sold = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            String code = Objects.toString(row.get("item_code"), null);
+            if (code == null || code.isBlank()) continue;
+            sold.merge(code, toDoubleOrZero(row.get("qty")), Double::sum);
+        }
+        return sold;
     }
 
     private static String normalizeRankBy(String rankBy) {
@@ -720,6 +735,18 @@ public class ProductInventoryService {
                             batch.batchNumber());
                     return inventoryService
                             .createAdjustment(tenantId, legacy)
+                            .flatMap(r -> {
+                                if (req.adjustmentType() == Enums.AdjustmentDirection.increase) {
+                                    return upsertResolvedSellingPrice(
+                                                    tenantId,
+                                                    itemCode,
+                                                    batch.unitCost(),
+                                                    req.markup(),
+                                                    req.sellingPrice())
+                                            .thenReturn(r);
+                                }
+                                return Mono.just(r);
+                            })
                             .map(r -> mapNewAdjustment(
                                     r, tenantId, productId, req, userEmail, userName, batch.quantity(), batch.batchNumber()));
                 }));
@@ -772,6 +799,30 @@ public class ProductInventoryService {
                 });
     }
 
+    private Mono<Void> upsertResolvedSellingPrice(
+            String tenantId, String itemCode, Double unitCost, Double markup, Double sellingPrice) {
+        Double resolved = resolveSellingPrice(unitCost, markup, sellingPrice);
+        return upsertSellingPrice(tenantId, itemCode, resolved);
+    }
+
+    /**
+     * Derives the ERPNext Standard Selling rate from explicit selling price or markup on unit cost.
+     * {@code selling_price} wins when both are supplied; {@code markup} is a percentage (e.g. 30 → 30%).
+     */
+    public static Double resolveSellingPrice(Double unitCost, Double markup, Double sellingPrice) {
+        if (sellingPrice != null && sellingPrice > 0) {
+            return roundMoney(sellingPrice);
+        }
+        if (markup != null && unitCost != null && unitCost > 0) {
+            return roundMoney(unitCost * (1 + markup / 100.0));
+        }
+        return null;
+    }
+
+    private static double roundMoney(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
+
     private Mono<Void> chainInitialBatches(String tenantId, String itemCode, InventoryApiSchemas.CreateProductRequest req) {
         List<InventoryApiSchemas.CreateBatchRequest> batches = req.initialBatches() == null ? List.of() : req.initialBatches();
         if (batches.isEmpty()) return Mono.empty();
@@ -797,7 +848,9 @@ public class ProductInventoryService {
         if (b.unitCost() != null) batchBody.put("pims_unit_cost", b.unitCost());
         if (b.tradeCost() != null) batchBody.put("pims_trade_cost", b.tradeCost());
         Mono<Void> createBatch = router.create(tenantId, "Batch", batchBody, SINGLE_TYPE).then();
-        return createBatch.then(createInitialStockEntry(tenantId, itemCode, b));
+        return createBatch
+                .then(createInitialStockEntry(tenantId, itemCode, b))
+                .then(upsertResolvedSellingPrice(tenantId, itemCode, b.unitCost(), b.markup(), b.sellingPrice()));
     }
 
     private Mono<Void> createInitialStockEntry(String tenantId, String itemCode, InventoryApiSchemas.CreateBatchRequest b) {
@@ -941,6 +994,8 @@ public class ProductInventoryService {
                 Double.parseDouble(cells[3]),
                 cells[4],
                 null,
+                null,
+                null,
                 null);
     }
 
@@ -1038,7 +1093,7 @@ public class ProductInventoryService {
 
     private InventoryApiSchemas.ProductSummary toSummary(
             String tenantId, InventoryItemResponse it, List<BatchResponse> batches, double availableQuantity,
-            Map<String, Double> sellingPrices, Double orderFrequency) {
+            Map<String, Double> sellingPrices, Double orderFrequency, Double itemsSold) {
         double total = batches.isEmpty()
                 ? availableQuantity
                 : batches.stream().filter(ProductInventoryService::isUsable).mapToDouble(BatchResponse::quantity).sum();
@@ -1079,6 +1134,7 @@ public class ProductInventoryService {
                 totalValue > 0 ? totalValue : null,
                 sellingPrice,
                 orderFrequency,
+                itemsSold,
                 reorder,
                 listBatches);
     }
@@ -1429,6 +1485,18 @@ public class ProductInventoryService {
             throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
                     ErrorCode.VALIDATION_ERROR,
                     "Missing or invalid batch fields: " + String.join(", ", missing));
+        }
+        if (b.markup() != null && b.markup() < 0) {
+            throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
+                    ErrorCode.VALIDATION_ERROR, "markup must be zero or greater");
+        }
+        if (b.sellingPrice() != null && b.sellingPrice() <= 0) {
+            throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
+                    ErrorCode.VALIDATION_ERROR, "selling_price must be greater than 0");
+        }
+        if (b.markup() != null && b.sellingPrice() == null && (b.unitCost() == null || b.unitCost() <= 0)) {
+            throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
+                    ErrorCode.VALIDATION_ERROR, "unit_cost is required when markup is provided");
         }
     }
 }
