@@ -106,6 +106,8 @@ class SalesOrderControllerTest extends AbstractInventoryControllerTest {
         byte[] pdf = {0x25, 0x50, 0x44, 0x46};
         when(receiptService.generateReceipt(eq("t1"), eq(ORDER_ID), anyString()))
                 .thenReturn(Mono.just(pdf));
+        when(salesOrderService.markReadyForCollection("t1", ORDER_ID))
+                .thenReturn(Mono.empty());
 
         client.get().uri(BASE + "/" + ORDER_ID + "/receipt")
                 .exchange()
@@ -113,6 +115,8 @@ class SalesOrderControllerTest extends AbstractInventoryControllerTest {
                 .expectHeader().contentType(MediaType.APPLICATION_PDF)
                 .expectHeader().valueEquals(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + ORDER_ID + "-receipt.pdf\"")
                 .expectBody(byte[].class).isEqualTo(pdf);
+
+        verify(salesOrderService).markReadyForCollection("t1", ORDER_ID);
     }
 
     @Test
@@ -132,6 +136,8 @@ class SalesOrderControllerTest extends AbstractInventoryControllerTest {
         byte[] pdf = {0x25, 0x50, 0x44, 0x46};
         when(receiptService.generateReceipt("t1", ORDER_ID, "Dr. Jane Mwangi"))
                 .thenReturn(Mono.just(pdf));
+        when(salesOrderService.markReadyForCollection("t1", ORDER_ID))
+                .thenReturn(Mono.empty());
 
         client.mutateWith(SecurityMockServerConfigurers.mockJwt().jwt(jwt -> jwt.claim("name", "Dr. Jane Mwangi")))
                 .get().uri(BASE + "/" + ORDER_ID + "/receipt")
@@ -144,6 +150,8 @@ class SalesOrderControllerTest extends AbstractInventoryControllerTest {
         byte[] pdf = {0x25, 0x50, 0x44, 0x46};
         when(receiptService.generateReceipt("t1", ORDER_ID, "unknown"))
                 .thenReturn(Mono.just(pdf));
+        when(salesOrderService.markReadyForCollection("t1", ORDER_ID))
+                .thenReturn(Mono.empty());
 
         client.get().uri(BASE + "/" + ORDER_ID + "/receipt")
                 .exchange()

@@ -735,6 +735,18 @@ public class ProductInventoryService {
                             batch.batchNumber());
                     return inventoryService
                             .createAdjustment(tenantId, legacy)
+                            .flatMap(r -> {
+                                if (req.adjustmentType() == Enums.AdjustmentDirection.increase) {
+                                    return upsertResolvedSellingPrice(
+                                                    tenantId,
+                                                    itemCode,
+                                                    batch.unitCost(),
+                                                    req.markup(),
+                                                    req.sellingPrice())
+                                            .thenReturn(r);
+                                }
+                                return Mono.just(r);
+                            })
                             .map(r -> mapNewAdjustment(
                                     r, tenantId, productId, req, userEmail, userName, batch.quantity(), batch.batchNumber()));
                 }));
@@ -787,6 +799,30 @@ public class ProductInventoryService {
                 });
     }
 
+    private Mono<Void> upsertResolvedSellingPrice(
+            String tenantId, String itemCode, Double unitCost, Double markup, Double sellingPrice) {
+        Double resolved = resolveSellingPrice(unitCost, markup, sellingPrice);
+        return upsertSellingPrice(tenantId, itemCode, resolved);
+    }
+
+    /**
+     * Derives the ERPNext Standard Selling rate from explicit selling price or markup on unit cost.
+     * {@code selling_price} wins when both are supplied; {@code markup} is a percentage (e.g. 30 → 30%).
+     */
+    static Double resolveSellingPrice(Double unitCost, Double markup, Double sellingPrice) {
+        if (sellingPrice != null && sellingPrice > 0) {
+            return roundMoney(sellingPrice);
+        }
+        if (markup != null && unitCost != null && unitCost > 0) {
+            return roundMoney(unitCost * (1 + markup / 100.0));
+        }
+        return null;
+    }
+
+    private static double roundMoney(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
+
     private Mono<Void> chainInitialBatches(String tenantId, String itemCode, InventoryApiSchemas.CreateProductRequest req) {
         List<InventoryApiSchemas.CreateBatchRequest> batches = req.initialBatches() == null ? List.of() : req.initialBatches();
         if (batches.isEmpty()) return Mono.empty();
@@ -812,7 +848,9 @@ public class ProductInventoryService {
         if (b.unitCost() != null) batchBody.put("pims_unit_cost", b.unitCost());
         if (b.tradeCost() != null) batchBody.put("pims_trade_cost", b.tradeCost());
         Mono<Void> createBatch = router.create(tenantId, "Batch", batchBody, SINGLE_TYPE).then();
-        return createBatch.then(createInitialStockEntry(tenantId, itemCode, b));
+        return createBatch
+                .then(createInitialStockEntry(tenantId, itemCode, b))
+                .then(upsertResolvedSellingPrice(tenantId, itemCode, b.unitCost(), b.markup(), b.sellingPrice()));
     }
 
     private Mono<Void> createInitialStockEntry(String tenantId, String itemCode, InventoryApiSchemas.CreateBatchRequest b) {
@@ -955,6 +993,8 @@ public class ProductInventoryService {
                 null,
                 Double.parseDouble(cells[3]),
                 cells[4],
+                null,
+                null,
                 null,
                 null);
     }
@@ -1445,6 +1485,18 @@ public class ProductInventoryService {
             throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
                     ErrorCode.VALIDATION_ERROR,
                     "Missing or invalid batch fields: " + String.join(", ", missing));
+        }
+        if (b.markup() != null && b.markup() < 0) {
+            throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
+                    ErrorCode.VALIDATION_ERROR, "markup must be zero or greater");
+        }
+        if (b.sellingPrice() != null && b.sellingPrice() <= 0) {
+            throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
+                    ErrorCode.VALIDATION_ERROR, "selling_price must be greater than 0");
+        }
+        if (b.markup() != null && b.sellingPrice() == null && (b.unitCost() == null || b.unitCost() <= 0)) {
+            throw new ke.co.safaricom.pims.inventory.exception.ServiceValidationException(
+                    ErrorCode.VALIDATION_ERROR, "unit_cost is required when markup is provided");
         }
     }
 }

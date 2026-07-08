@@ -53,6 +53,8 @@ class SalesOrderServiceTest {
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ErpNextMessageResponse<Map<String, Object>>> RAW_MESSAGE_TYPE =
             new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<Object>> SET_VALUE_TYPE =
+            new ParameterizedTypeReference<>() {};
 
     /** Stubs the cash-settlement RPC chain (get_payment_entry → insert → submit) run after submit. */
     private void stubCashSettlement() {
@@ -283,5 +285,45 @@ class SalesOrderServiceTest {
         order.verify(router).getOne(TENANT, "Sales Invoice", ORDER_ID, RAW_SINGLE_TYPE);
         order.verify(router).callMethod(eq(TENANT), eq("frappe.client.submit"), anyMap(), eq(SUBMIT_TYPE));
         order.verify(router).getOne(TENANT, "Sales Invoice", ORDER_ID, SINGLE_TYPE);
+    }
+
+    @Test
+    void markReadyForCollection_sets_custom_order_status() {
+        when(router.callMethod(eq(TENANT), eq("frappe.client.set_value"), anyMap(), eq(SET_VALUE_TYPE)))
+                .thenReturn(Mono.just(new ErpNextMessageResponse<>("ok")));
+
+        StepVerifier.create(service.markReadyForCollection(TENANT, ORDER_ID))
+                .verifyComplete();
+
+        verify(router).callMethod(eq(TENANT), eq("frappe.client.set_value"), argThat(body -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> payload = (Map<String, Object>) body;
+            return "Sales Invoice".equals(payload.get("doctype"))
+                    && ORDER_ID.equals(payload.get("name"))
+                    && "custom_pims_order_status".equals(payload.get("fieldname"))
+                    && SalesOrderService.STATUS_READY_FOR_COLLECTION.equals(payload.get("value"));
+        }), eq(SET_VALUE_TYPE));
+    }
+
+    @Test
+    void getOrder_returns_ready_for_collection_when_custom_status_set() {
+        ErpNextDoc ready = doc(Map.of(
+                "name", ORDER_ID,
+                "docstatus", 1,
+                "customer", "Jane Doe",
+                "custom_pims_order_status", SalesOrderService.STATUS_READY_FOR_COLLECTION,
+                "items", List.of(Map.of(
+                        "item_code", ITEM_CODE,
+                        "item_name", ITEM_NAME,
+                        "qty", 1.0,
+                        "rate", 100.0,
+                        "amount", 100.0))));
+        when(router.getOne(TENANT, "Sales Invoice", ORDER_ID, SINGLE_TYPE))
+                .thenReturn(Mono.just(new ErpNextSingleResponse<>(ready)));
+
+        StepVerifier.create(service.getOrder(TENANT, ORDER_ID))
+                .assertNext(resp -> assertThat(resp.status())
+                        .isEqualTo(SalesOrderService.STATUS_READY_FOR_COLLECTION))
+                .verifyComplete();
     }
 }

@@ -53,10 +53,12 @@ public class SalesOrderService {
     private static final String F_ITEM_NAME    = "item_name";
     private static final String F_PIMS_PRESCRIPTION_ID = "custom_pims_prescription_id";
     private static final String F_PIMS_SALE_TYPE = "custom_pims_sale_type";
+    private static final String F_PIMS_ORDER_STATUS = "custom_pims_order_status";
+    public static final String STATUS_READY_FOR_COLLECTION = "Ready for Collection";
 
     // ---- Query fields -------------------------------------------------------
     private static final String SI_LIST_FIELDS =
-            "[\"name\",\"customer\",\"posting_date\",\"grand_total\",\"total_qty\",\"status\",\"docstatus\",\"currency\",\"creation\",\"custom_pims_prescription_id\",\"custom_pims_sale_type\"]";
+            "[\"name\",\"customer\",\"posting_date\",\"grand_total\",\"total_qty\",\"status\",\"docstatus\",\"currency\",\"creation\",\"custom_pims_prescription_id\",\"custom_pims_sale_type\",\"custom_pims_order_status\"]";
 
     private final ErpNextTenantRouter router;
     private final InventoryService inventoryService;
@@ -256,7 +258,7 @@ public class SalesOrderService {
         params.put("order_by", "creation desc");
         List<String> filters = new ArrayList<>();
         filters.add("[\"docstatus\",\"!=\",2]");
-        if (StringUtils.hasText(status)) filters.add("[\"status\",\"=\",\"" + status + "\"]");
+        if (StringUtils.hasText(status)) applyOrderStatusFilter(filters, status);
         if (StringUtils.hasText(from))   filters.add("[\"posting_date\",\">=\",\"" + from + "\"]");
         if (StringUtils.hasText(to))     filters.add("[\"posting_date\",\"<=\",\"" + to + "\"]");
         if (!filters.isEmpty()) params.put("filters", "[" + String.join(",", filters) + "]");
@@ -281,6 +283,24 @@ public class SalesOrderService {
     public Mono<SalesOrderSchemas.OrderResponse> getOrder(String tenantId, String orderId) {
         return router.getOne(tenantId, DOCTYPE, orderId, SINGLE_TYPE)
                 .map(resp -> toOrderResponse(resp.data(), null));
+    }
+
+    /**
+     * Marks a submitted order as ready for customer collection. Best-effort after receipt
+     * generation — a failure is logged rather than blocking the receipt response.
+     */
+    public Mono<Void> markReadyForCollection(String tenantId, String orderId) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("doctype", DOCTYPE);
+        body.put("name", orderId);
+        body.put("fieldname", F_PIMS_ORDER_STATUS);
+        body.put("value", STATUS_READY_FOR_COLLECTION);
+        return router.callMethod(tenantId, "frappe.client.set_value", body, SET_VALUE_TYPE)
+                .then()
+                .onErrorResume(ex -> {
+                    log.warn("Failed to mark order {} ready for collection: {}", orderId, ex.toString());
+                    return Mono.empty();
+                });
     }
 
     // ---- Helpers ------------------------------------------------------------
@@ -418,7 +438,7 @@ public class SalesOrderService {
                 ? doc.totalTaxesAndCharges() : grandTotal - subtotal;
         return new SalesOrderSchemas.OrderResponse(
                 doc.name(),
-                docStatusLabel(doc.docstatus()),
+                resolveOrderStatus(doc),
                 doc.customer() != null ? doc.customer() : DEFAULT_CUSTOMER,
                 lines,
                 subtotal, taxAmount, grandTotal,
@@ -432,7 +452,7 @@ public class SalesOrderService {
         return new SalesOrderSchemas.OrderSummary(
                 doc.name(),
                 doc.customer() != null ? doc.customer() : DEFAULT_CUSTOMER,
-                docStatusLabel(doc.docstatus()),
+                resolveOrderStatus(doc),
                 doc.grandTotal() != null ? doc.grandTotal() : 0,
                 doc.totalQty() != null ? (int) Math.round(doc.totalQty()) : 0,
                 doc.currency() != null ? doc.currency() : CURRENCY,
@@ -458,6 +478,26 @@ public class SalesOrderService {
             return new SalesOrderSchemas.OrderLineItem(
                     str(m.get(F_ITEM_CODE)), str(m.get(F_ITEM_NAME)), qty, rate, lineTotal);
         }).toList();
+    }
+
+    private static void applyOrderStatusFilter(List<String> filters, String status) {
+        String normalized = status.trim().toLowerCase();
+        switch (normalized) {
+            case "draft" -> filters.add("[\"docstatus\",\"=\",0]");
+            case "submitted" -> filters.add("[\"docstatus\",\"=\",1]");
+            case "cancelled" -> filters.add("[\"docstatus\",\"=\",2]");
+            default -> {
+                filters.add("[\"docstatus\",\"=\",1]");
+                filters.add("[\"custom_pims_order_status\",\"=\",\"" + status.trim() + "\"]");
+            }
+        }
+    }
+
+    private static String resolveOrderStatus(ErpNextDoc doc) {
+        if (StringUtils.hasText(doc.customPimsOrderStatus())) {
+            return doc.customPimsOrderStatus();
+        }
+        return docStatusLabel(doc.docstatus());
     }
 
     private static String docStatusLabel(Integer docstatus) {
@@ -496,5 +536,8 @@ public class SalesOrderService {
 
     // get_payment_entry / frappe.client.insert return the full doc dict under "message".
     private static final ParameterizedTypeReference<ErpNextMessageResponse<Map<String, Object>>> RAW_MESSAGE_TYPE =
+            new ParameterizedTypeReference<>() {};
+
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<Object>> SET_VALUE_TYPE =
             new ParameterizedTypeReference<>() {};
 }

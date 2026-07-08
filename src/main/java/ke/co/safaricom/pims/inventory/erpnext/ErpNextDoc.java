@@ -128,5 +128,6 @@ public record ErpNextDoc(
 
         // --- Sales Invoice (PMIS custom) ---
         @JsonProperty("custom_pims_prescription_id") String customPimsPrescriptionId,
-        @JsonProperty("custom_pims_sale_type") String customPimsSaleType
+        @JsonProperty("custom_pims_sale_type") String customPimsSaleType,
+        @JsonProperty("custom_pims_order_status") String customPimsOrderStatus
 ) {}
