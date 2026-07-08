@@ -33,7 +33,7 @@ class RevenueReportServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RevenueReportService(router);
+        service = new RevenueReportService(new SalesInvoiceReportSupport(router));
     }
 
     @Test

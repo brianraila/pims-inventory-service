@@ -14,6 +14,10 @@ Operational mapping between the **`inventory-api-v1.yaml`** contract and `ms-pim
 | **Supplier groups** | `web.api.SupplierGroupController` + `SupplierService` | ERPNext **`Supplier Group`** doctype (list/create/update/delete). |
 | **Supplier meta** | `web.api.InventoryMetaController` (`GET /meta/suppliers`) + `InventoryService.listSuppliers` | Active ERPNext suppliers only (picker for batches, POs, product forms). |
 | **Purchase orders** | `api.PurchaseOrderController` + `PurchaseOrderService` | ERPNext **`Purchase Order`** (list/create). |
+| **Sales report** | `web.api.SalesReportController` + `SalesReportService` | ERPNext **`Sales Invoice`** + **`Sales Invoice Item`**; product metadata via `InventoryService`. |
+| **Stock report** | `web.api.StockReportController` + `StockReportService` | ERPNext **`Item`** / **`Batch`** / **`Bin`** (+ SLE for out-of-stock dates). |
+| **Revenue report (legacy KPIs)** | `web.api.RevenueReportController` + `RevenueReportService` | ERPNext **`Sales Invoice`** with Rx/OTC split via `custom_pims_*`. |
+| **Revenue analytics reports** | `web.api.RevenueAnalyticsController` + `RevenueAnalyticsService` + `SalesInvoiceReportSupport` | Seven endpoints under **`/inventory/reports/*`**: KPI cards, daily trends, category/top products, payment methods (`Payment Entry`), Rx/OTC monthly counts, paginated revenue overview. COGS uses average `pims_unit_cost` from batches. |
 
 **Removed (breaking):** Legacy REST **`/api/v1/inventory/items`**, **`/batches`**, **`/adjustments`**, **`/transfers`** (`InventoryController`). Use **`/inventory/products`** and nested batch/adjustment routes per OpenAPI.
 

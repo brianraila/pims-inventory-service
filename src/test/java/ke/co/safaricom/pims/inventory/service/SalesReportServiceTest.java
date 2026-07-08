@@ -47,7 +47,7 @@ class SalesReportServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SalesReportService(router, inventoryService);
+        service = new SalesReportService(new SalesInvoiceReportSupport(router), inventoryService);
     }
 
     @Test

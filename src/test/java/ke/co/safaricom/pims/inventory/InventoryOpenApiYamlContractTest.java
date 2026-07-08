@@ -19,6 +19,13 @@ class InventoryOpenApiYamlContractTest {
         assertThat(yaml).contains("/inventory/sales:");
         assertThat(yaml).contains("/inventory/stock-report:");
         assertThat(yaml).contains("/inventory/revenue:");
+        assertThat(yaml).contains("/inventory/reports/revenue-analytics:");
+        assertThat(yaml).contains("/inventory/reports/revenue-trends:");
+        assertThat(yaml).contains("/inventory/reports/revenue-by-category:");
+        assertThat(yaml).contains("/inventory/reports/top-selling-products:");
+        assertThat(yaml).contains("/inventory/reports/revenue-by-payment-method:");
+        assertThat(yaml).contains("/inventory/reports/transaction-types:");
+        assertThat(yaml).contains("/inventory/reports/revenue-overview:");
         assertThat(yaml).contains("manufacturer_id");
         assertThat(yaml).contains("/inventory/purchase-orders:");
         assertThat(yaml).contains("PMIS");

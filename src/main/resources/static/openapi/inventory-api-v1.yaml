@@ -26,6 +26,8 @@ tags:
   - name: Stock Adjustments
   - name: Purchase Orders
   - name: Sales
+  - name: Revenue
+  - name: Reports
   - name: Terminology Service
   - name: Manufacturers
   - name: Categories
@@ -515,6 +517,173 @@ paths:
               schema:
                 $ref: '#/components/schemas/RevenueReportResponse'
 
+  /inventory/reports/revenue-analytics:
+    get:
+      tags: [Reports]
+      operationId: getRevenueAnalytics
+      summary: KPI cards with period-over-period change (revenue, gross/net profit, margin)
+      description: |
+        `total_revenue` = sum of invoice grand_total.
+        `gross_profit` = line amounts − qty × average batch unit cost.
+        `net_profit` = gross_profit − sum of total_taxes_and_charges.
+        `gross_profit_margin` = (gross_profit / total_revenue) × 100.
+        Change % compares the selected window to the immediately preceding window of equal length.
+      parameters:
+        - $ref: '#/components/parameters/ReportFromParam'
+        - $ref: '#/components/parameters/ReportToParam'
+        - $ref: '#/components/parameters/ReportDateAliasParam'
+        - $ref: '#/components/parameters/ReportDaysParam'
+      responses:
+        '200':
+          description: Revenue analytics KPI cards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevenueAnalyticsResponse'
+
+  /inventory/reports/revenue-trends:
+    get:
+      tags: [Reports]
+      operationId: getRevenueTrends
+      summary: Daily revenue/profit/units series
+      parameters:
+        - $ref: '#/components/parameters/ReportFromParam'
+        - $ref: '#/components/parameters/ReportToParam'
+        - $ref: '#/components/parameters/ReportDateAliasParam'
+        - $ref: '#/components/parameters/ReportDaysParam'
+        - name: metric
+          in: query
+          schema:
+            type: string
+            enum: [revenue, profit, units]
+            default: revenue
+          description: Primary chart metric (all three values are always returned per day)
+      responses:
+        '200':
+          description: Daily time series
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevenueTrendsResponse'
+
+  /inventory/reports/revenue-by-category:
+    get:
+      tags: [Reports]
+      operationId: getRevenueByCategory
+      summary: Top categories by sales revenue
+      parameters:
+        - $ref: '#/components/parameters/ReportFromParam'
+        - $ref: '#/components/parameters/ReportToParam'
+        - $ref: '#/components/parameters/ReportDateAliasParam'
+        - $ref: '#/components/parameters/ReportDaysParam'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 5
+            maximum: 100
+      responses:
+        '200':
+          description: Category revenue breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevenueByCategoryResponse'
+
+  /inventory/reports/top-selling-products:
+    get:
+      tags: [Reports]
+      operationId: getTopSellingProducts
+      summary: Top products by units sold
+      parameters:
+        - $ref: '#/components/parameters/ReportFromParam'
+        - $ref: '#/components/parameters/ReportToParam'
+        - $ref: '#/components/parameters/ReportDateAliasParam'
+        - $ref: '#/components/parameters/ReportDaysParam'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 5
+            maximum: 100
+      responses:
+        '200':
+          description: Ranked top-selling products
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopSellingProductsResponse'
+
+  /inventory/reports/revenue-by-payment-method:
+    get:
+      tags: [Reports]
+      operationId: getRevenueByPaymentMethod
+      summary: Revenue breakdown by payment method
+      parameters:
+        - $ref: '#/components/parameters/ReportFromParam'
+        - $ref: '#/components/parameters/ReportToParam'
+        - $ref: '#/components/parameters/ReportDateAliasParam'
+        - $ref: '#/components/parameters/ReportDaysParam'
+      responses:
+        '200':
+          description: Payment method share and trend
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevenueByPaymentMethodResponse'
+
+  /inventory/reports/transaction-types:
+    get:
+      tags: [Reports]
+      operationId: getTransactionTypes
+      summary: Monthly OTC vs prescription transaction counts
+      parameters:
+        - $ref: '#/components/parameters/ReportFromParam'
+        - $ref: '#/components/parameters/ReportToParam'
+        - $ref: '#/components/parameters/ReportDateAliasParam'
+        - $ref: '#/components/parameters/ReportDaysParam'
+      responses:
+        '200':
+          description: Monthly Rx/OTC transaction counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionTypesResponse'
+
+  /inventory/reports/revenue-overview:
+    get:
+      tags: [Reports]
+      operationId: getRevenueOverview
+      summary: Paginated product revenue table
+      parameters:
+        - $ref: '#/components/parameters/ReportFromParam'
+        - $ref: '#/components/parameters/ReportToParam'
+        - $ref: '#/components/parameters/ReportDateAliasParam'
+        - $ref: '#/components/parameters/ReportDaysParam'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Optional category filter (case-insensitive)
+      responses:
+        '200':
+          description: Paginated product revenue rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevenueOverviewResponse'
+
   /inventory/products/{product_id}/batches:
     get:
       tags: [Batches]
@@ -802,6 +971,35 @@ components:
         minimum: 1
         maximum: 100
         default: 10
+    ReportFromParam:
+      name: from
+      in: query
+      schema:
+        type: string
+        format: date
+      description: Inclusive start date (YYYY-MM-DD). Also accepts DD-MM-YYYY.
+    ReportToParam:
+      name: to
+      in: query
+      schema:
+        type: string
+        format: date
+      description: Inclusive end date (YYYY-MM-DD). Also accepts DD-MM-YYYY.
+    ReportDateAliasParam:
+      name: date
+      in: query
+      schema:
+        type: string
+      description: |
+        Design-style date alias. Single day (`01-02-2026` or `2026-02-01`) or
+        comma-separated range (`01-02-2026,28-02-2026`). Overrides from/to when present.
+    ReportDaysParam:
+      name: days
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+      description: Rolling window in days when from/to/date are omitted (default 30)
 
   schemas:
     ProductCategory:
@@ -1095,6 +1293,145 @@ components:
       properties:
         count: { type: integer, format: int64 }
         revenue: { type: number, format: double }
+
+    MoneyMetricCard:
+      type: object
+      properties:
+        value: { type: number, format: double }
+        currency: { type: string, example: KES }
+        change_pct: { type: number, format: double }
+        trend: { type: string, enum: [up, down, flat] }
+
+    PercentMetricCard:
+      type: object
+      properties:
+        value: { type: number, format: double }
+        unit: { type: string, example: "%" }
+        change_pct: { type: number, format: double }
+        trend: { type: string, enum: [up, down, flat] }
+
+    RevenueAnalyticsResponse:
+      type: object
+      properties:
+        total_revenue:
+          $ref: '#/components/schemas/MoneyMetricCard'
+        gross_profit:
+          $ref: '#/components/schemas/MoneyMetricCard'
+        net_profit:
+          $ref: '#/components/schemas/MoneyMetricCard'
+        gross_profit_margin:
+          $ref: '#/components/schemas/PercentMetricCard'
+
+    TrendSeriesPoint:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        revenue: { type: number, format: double }
+        profit: { type: number, format: double }
+        units: { type: integer, format: int64 }
+
+    RevenueTrendsResponse:
+      type: object
+      properties:
+        metric: { type: string, enum: [revenue, profit, units] }
+        series:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrendSeriesPoint'
+
+    CategoryRevenue:
+      type: object
+      properties:
+        category: { type: string }
+        revenue: { type: number, format: double }
+
+    RevenueByCategoryResponse:
+      type: object
+      properties:
+        total: { type: number, format: double }
+        currency: { type: string, example: KES }
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryRevenue'
+
+    TopProduct:
+      type: object
+      properties:
+        rank: { type: integer }
+        product_id: { type: string, format: uuid }
+        name: { type: string }
+        units_sold: { type: integer, format: int64 }
+        revenue: { type: number, format: double }
+        currency: { type: string, example: KES }
+        trend: { type: string, enum: [up, down, flat] }
+
+    TopSellingProductsResponse:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopProduct'
+
+    PaymentMethodBreakdown:
+      type: object
+      properties:
+        method: { type: string, example: mpesa }
+        value: { type: number, format: double }
+        pct: { type: number, format: double }
+        change_pct: { type: number, format: double }
+        trend: { type: string, enum: [up, down, flat] }
+
+    RevenueByPaymentMethodResponse:
+      type: object
+      properties:
+        total: { type: number, format: double }
+        currency: { type: string, example: KES }
+        methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentMethodBreakdown'
+
+    TransactionTypeMonth:
+      type: object
+      properties:
+        month: { type: string, example: "2026-01" }
+        otc: { type: integer, format: int64 }
+        prescription: { type: integer, format: int64 }
+
+    TransactionTypesResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionTypeMonth'
+
+    RevenueOverviewRow:
+      type: object
+      properties:
+        period: { type: string, example: "2026-01" }
+        product_id: { type: string, format: uuid }
+        product_name: { type: string }
+        product_subtitle: { type: string }
+        category: { type: string }
+        revenue: { type: number, format: double }
+        currency: { type: string, example: KES }
+        units_sold: { type: integer, format: int64 }
+        avg_price: { type: number, format: double }
+
+    RevenueOverviewResponse:
+      type: object
+      properties:
+        page: { type: integer }
+        page_size: { type: integer }
+        total_pages: { type: integer, format: int64 }
+        total_records: { type: integer, format: int64 }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RevenueOverviewRow'
 
     Batch:
       type: object
