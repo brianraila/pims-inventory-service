@@ -10,6 +10,9 @@ Operational mapping between the **`inventory-api-v1.yaml`** contract and `ms-pim
 | **Adjustments** | `web.api.InventoryAdjustmentController` + reuse `InventoryService.createAdjustment` | ERPNext **`Stock Entry`** Material Receipt/Issue flows; UUID batch linkage aligns with deterministic batch IDs. |
 | **Terminology** | `web.util.TerminologyStub` + `TerminologyController` | **Stub catalogue** returning sample hits. Replace module with RxNorm FHIR/National PPB integrations + caching. |
 | **Manufacturers** | `ManufacturersCatalog` seeded list + `ManufacturersController` | **Static seed** (`ManufacturersCatalog`). Replace with master data store or ERP **Supplier** linkage. |
+| **Suppliers** | `web.api.SupplierController` + `SupplierService` + `SupplierMapper` | ERPNext **`Supplier`** doctype. Contact and PPB/licensing metadata are composed into **`supplier_details`**; registration number maps to **`tax_id`**. |
+| **Supplier groups** | `web.api.SupplierGroupController` + `SupplierService` | ERPNext **`Supplier Group`** doctype (list/create/update/delete). |
+| **Supplier meta** | `web.api.InventoryMetaController` (`GET /meta/suppliers`) + `InventoryService.listSuppliers` | Active ERPNext suppliers only (picker for batches, POs, product forms). |
 | **Purchase orders** | `api.PurchaseOrderController` + `PurchaseOrderService` | ERPNext **`Purchase Order`** (list/create). |
 
 **Removed (breaking):** Legacy REST **`/api/v1/inventory/items`**, **`/batches`**, **`/adjustments`**, **`/transfers`** (`InventoryController`). Use **`/inventory/products`** and nested batch/adjustment routes per OpenAPI.
