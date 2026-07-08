@@ -27,6 +27,26 @@ public final class Enums {
         unavailable
     }
 
+    public enum SaleType {
+        prescription,
+        otc,
+        mixed;
+
+        @JsonCreator
+        public static SaleType fromJson(String raw) {
+            if (raw == null || raw.isBlank()) return otc;
+            for (SaleType t : values()) {
+                if (t.name().equalsIgnoreCase(raw.strip())) return t;
+            }
+            return otc;
+        }
+
+        @JsonValue
+        public String jsonName() {
+            return name();
+        }
+    }
+
     public enum RegulatoryStatus {
         approved,
         pending,

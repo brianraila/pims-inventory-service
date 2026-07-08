@@ -73,6 +73,7 @@ public final class InventoryApiSchemas {
             Double totalValue,
             Double sellingPrice,
             Double orderFrequency,
+            Double itemsSold,
             double reorderLevel,
             List<ProductListBatch> batches) {}
 
@@ -213,7 +214,9 @@ public final class InventoryApiSchemas {
             @NotNull(message = "unit_cost is required") @Positive(message = "unit_cost must be greater than 0") Double unitCost,
             @NotBlank(message = "storage_location is required") String storageLocation,
             String branch,
-            String grnNumber) {}
+            String grnNumber,
+            Double markup,
+            Double sellingPrice) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -223,7 +226,9 @@ public final class InventoryApiSchemas {
             @Positive(message = "quantity must be greater than 0") double quantity,
             @NotNull(message = "reason is required") Enums.AdjustmentReason reason,
             String notes,
-            String referenceNumber) {}
+            String referenceNumber,
+            Double markup,
+            Double sellingPrice) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonInclude(JsonInclude.Include.NON_NULL)
