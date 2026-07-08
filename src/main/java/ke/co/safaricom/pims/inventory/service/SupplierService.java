@@ -97,6 +97,7 @@ public class SupplierService {
 
     public Mono<SupplierResponse> updateSupplier(String tenantId, String id, CreateSupplierRequest request) {
         Map<String, Object> body = buildBody(request);
+        body.put("supplier_name", request.supplierName().trim());
         return router.replace(tenantId, DOCTYPE_SUPPLIER, id, body, SINGLE_TYPE)
                 .map(response -> mapper.toResponse(response.data()));
     }
@@ -175,7 +176,6 @@ public class SupplierService {
     /** Structured, human-readable note holding contact + PPB/licensing metadata. */
     private String composeDetails(CreateSupplierRequest r) {
         List<String> lines = new ArrayList<>();
-        addLine(lines, "Registration No", r.registrationNumber());
         addLine(lines, "Licence No", r.licenseNumber());
         addLine(lines, "Licence Type", r.licenseType());
         addLine(lines, "Licence Validity", r.licenseValidity());

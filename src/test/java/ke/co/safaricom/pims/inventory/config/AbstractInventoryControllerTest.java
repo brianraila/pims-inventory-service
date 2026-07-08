@@ -9,6 +9,7 @@ import ke.co.safaricom.pims.inventory.service.PurchaseOrderService;
 import ke.co.safaricom.pims.inventory.service.ReceiptService;
 import ke.co.safaricom.pims.inventory.service.SalesOrderService;
 import ke.co.safaricom.pims.inventory.service.SalesReportService;
+import ke.co.safaricom.pims.inventory.service.SupplierService;
 import ke.co.safaricom.pims.inventory.web.api.InventoryAdjustmentController;
 import ke.co.safaricom.pims.inventory.web.api.InventoryBatchController;
 import ke.co.safaricom.pims.inventory.web.api.InventoryCategoryController;
@@ -16,6 +17,8 @@ import ke.co.safaricom.pims.inventory.web.api.InventoryProductController;
 import ke.co.safaricom.pims.inventory.web.api.ManufacturersController;
 import ke.co.safaricom.pims.inventory.web.api.SalesOrderController;
 import ke.co.safaricom.pims.inventory.web.api.SalesReportController;
+import ke.co.safaricom.pims.inventory.web.api.SupplierController;
+import ke.co.safaricom.pims.inventory.web.api.SupplierGroupController;
 import ke.co.safaricom.pims.inventory.web.api.TerminologyController;
 import ke.co.safaricom.pims.inventory.web.service.ProductInventoryService;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +47,9 @@ import static org.mockito.Mockito.when;
             SalesReportController.class,
             ManufacturersController.class,
             InventoryAdjustmentController.class,
-            PurchaseOrderController.class
+            PurchaseOrderController.class,
+            SupplierController.class,
+            SupplierGroupController.class
         })
 @Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
 @ActiveProfiles("test")
@@ -76,6 +81,9 @@ public abstract class AbstractInventoryControllerTest {
 
     @MockBean
     protected PurchaseOrderService purchaseOrderService;
+
+    @MockBean
+    protected SupplierService supplierService;
 
     @BeforeEach
     void sharedControllerTestSetUp() {
