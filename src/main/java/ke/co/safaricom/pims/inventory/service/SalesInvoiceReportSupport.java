@@ -2,11 +2,13 @@ package ke.co.safaricom.pims.inventory.service;
 
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.web.model.Enums;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
@@ -35,13 +37,14 @@ public class SalesInvoiceReportSupport {
 
     private static final String ANALYTICS_INVOICE_FIELDS =
             "[\"name\",\"posting_date\",\"currency\",\"docstatus\",\"status\",\"grand_total\","
-                    + "\"net_total\",\"total_taxes_and_charges\","
-                    + "\"custom_pims_prescription_id\",\"custom_pims_sale_type\"]";
+                    + "\"net_total\",\"total_taxes_and_charges\"]";
 
     private static final String MINIMAL_INVOICE_FIELDS =
             "[\"name\",\"posting_date\",\"currency\",\"docstatus\",\"status\"]";
 
     private static final ParameterizedTypeReference<ErpNextListResponse<ErpNextDoc>> DOC_LIST_TYPE =
+            new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ErpNextSingleResponse<ErpNextDoc>> DOC_SINGLE_TYPE =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ErpNextListResponse<Map<String, Object>>> MAP_LIST_TYPE =
             new ParameterizedTypeReference<>() {};
@@ -63,6 +66,24 @@ public class SalesInvoiceReportSupport {
         params.put("limit_page_length", String.valueOf(FETCH_PAGE_SIZE));
         params.put("filters", buildInvoiceFilters(from, to, status));
         return fetchDocPage(tenantId, SI_DOCTYPE, params, 0, new ArrayList<>());
+    }
+
+    /**
+     * ERPNext list queries reject {@code custom_pims_*} in the {@code fields} filter, but getOne
+     * returns them. Re-fetch each invoice in full when Rx/OTC classification is required.
+     */
+    public Mono<List<ErpNextDoc>> fetchInvoicesWithSaleMetadata(
+            String tenantId, String from, String to, String status, boolean analyticsFields) {
+        return fetchInvoices(tenantId, from, to, status, analyticsFields)
+                .flatMap(invoices -> {
+                    if (invoices.isEmpty()) {
+                        return Mono.just(invoices);
+                    }
+                    return Flux.fromIterable(invoices)
+                            .flatMap(inv -> router.getOne(tenantId, SI_DOCTYPE, inv.name(), DOC_SINGLE_TYPE)
+                                    .map(ErpNextSingleResponse::data), 8)
+                            .collectList();
+                });
     }
 
     public Mono<List<Map<String, Object>>> fetchInvoiceItems(String tenantId, List<String> parents) {

@@ -5,6 +5,7 @@ import ke.co.safaricom.pims.inventory.api.dto.BatchResponse;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
 import org.junit.jupiter.api.BeforeEach;
@@ -191,6 +192,7 @@ class RevenueAnalyticsServiceTest {
                 "name", "INV-OTC", "posting_date", "2026-01-12", "grand_total", 50.0,
                 "currency", "KES", "docstatus", 1, "custom_pims_sale_type", "otc"));
         stubSinglePeriodInvoices(List.of(rx, otc));
+        stubInvoiceGetOne(rx, otc);
 
         StepVerifier.create(service.getTransactionTypes(TENANT, null, "2026-01-01", "2026-01-31", null))
                 .assertNext(resp -> {
@@ -294,6 +296,13 @@ class RevenueAnalyticsServiceTest {
     private void stubSinglePeriodInvoices(List<ErpNextDoc> invoices) {
         when(router.getList(eq(TENANT), eq("Sales Invoice"), anyMap(), any(ParameterizedTypeReference.class)))
                 .thenReturn(Mono.just(new ErpNextListResponse<>(invoices)));
+    }
+
+    private void stubInvoiceGetOne(ErpNextDoc... invoices) {
+        for (ErpNextDoc invoice : invoices) {
+            when(router.getOne(eq(TENANT), eq("Sales Invoice"), eq(invoice.name()), any(ParameterizedTypeReference.class)))
+                    .thenReturn(Mono.just(new ErpNextSingleResponse<>(invoice)));
+        }
     }
 
     private static Map<String, Object> line(String parent, double qty, double amount) {

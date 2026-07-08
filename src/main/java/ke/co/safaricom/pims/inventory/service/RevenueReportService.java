@@ -21,7 +21,7 @@ public class RevenueReportService {
             String tenantId, Integer days, String from, String to, String status) {
         SalesInvoiceReportSupport.DateRange range =
                 SalesInvoiceReportSupport.resolveDateRange(days, from, to, null);
-        return support.fetchInvoices(tenantId, range.from(), range.to(), status, true)
+        return support.fetchInvoicesWithSaleMetadata(tenantId, range.from(), range.to(), status, true)
                 .map(invoices -> aggregate(invoices, range));
     }
 

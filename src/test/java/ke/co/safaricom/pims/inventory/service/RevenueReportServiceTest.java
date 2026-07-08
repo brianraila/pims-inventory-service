@@ -3,6 +3,7 @@ package ke.co.safaricom.pims.inventory.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -71,5 +72,9 @@ class RevenueReportServiceTest {
     private void stubInvoices(List<ErpNextDoc> invoices) {
         when(router.getList(eq(TENANT), eq("Sales Invoice"), anyMap(), any(ParameterizedTypeReference.class)))
                 .thenReturn(Mono.just(new ErpNextListResponse<>(invoices)));
+        for (ErpNextDoc invoice : invoices) {
+            when(router.getOne(eq(TENANT), eq("Sales Invoice"), eq(invoice.name()), any(ParameterizedTypeReference.class)))
+                    .thenReturn(Mono.just(new ErpNextSingleResponse<>(invoice)));
+        }
     }
 }

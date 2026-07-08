@@ -240,7 +240,7 @@ public class RevenueAnalyticsService {
         SalesInvoiceReportSupport.DateRange range =
                 SalesInvoiceReportSupport.resolveDateRange(days, from, to, date);
 
-        return support.fetchInvoices(tenantId, range.from(), range.to(), STATUS_SUBMITTED, true)
+        return support.fetchInvoicesWithSaleMetadata(tenantId, range.from(), range.to(), STATUS_SUBMITTED, true)
                 .map(invoices -> {
                     Map<String, long[]> byMonth = new TreeMap<>();
                     for (ErpNextDoc invoice : invoices) {
