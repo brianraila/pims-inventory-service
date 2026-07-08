@@ -11,6 +11,7 @@ import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.exception.ConflictException;
 import ke.co.safaricom.pims.inventory.exception.ResourceNotFoundException;
 import ke.co.safaricom.pims.inventory.exception.ServiceValidationException;
+import ke.co.safaricom.pims.inventory.web.model.Enums;
 import ke.co.safaricom.pims.inventory.web.model.InventoryApiSchemas;
 import ke.co.safaricom.pims.inventory.web.model.SalesOrderSchemas;
 import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
@@ -50,10 +51,12 @@ public class SalesOrderService {
     private static final String F_AMOUNT       = "amount";
     private static final String F_ITEM_CODE    = "item_code";
     private static final String F_ITEM_NAME    = "item_name";
+    private static final String F_PIMS_PRESCRIPTION_ID = "custom_pims_prescription_id";
+    private static final String F_PIMS_SALE_TYPE = "custom_pims_sale_type";
 
     // ---- Query fields -------------------------------------------------------
     private static final String SI_LIST_FIELDS =
-            "[\"name\",\"customer\",\"posting_date\",\"grand_total\",\"total_qty\",\"status\",\"docstatus\",\"currency\",\"creation\"]";
+            "[\"name\",\"customer\",\"posting_date\",\"grand_total\",\"total_qty\",\"status\",\"docstatus\",\"currency\",\"creation\",\"custom_pims_prescription_id\",\"custom_pims_sale_type\"]";
 
     private final ErpNextTenantRouter router;
     private final InventoryService inventoryService;
@@ -80,7 +83,7 @@ public class SalesOrderService {
                 // The prescription service owns customer lookup + ERPNext sync and passes us the
                 // resolved ERPNext customer name; we use it directly (blank → Walk-in Customer).
                 String customer = resolveCustomer(req.customerName());
-                return buildInvoiceBodyWithTax(tenantId, customer, erpItems, req.prescriptionId(), 0)
+                return buildInvoiceBodyWithTax(tenantId, customer, erpItems, req, 0)
                         .flatMap(body -> router.create(tenantId, DOCTYPE, body, SINGLE_TYPE))
                         .map(resp -> toOrderResponse(resp.data(), erpItems));
             }));
@@ -306,7 +309,7 @@ public class SalesOrderService {
     }
 
     private Map<String, Object> buildInvoiceBody(
-            String customer, List<Map<String, Object>> items, String prescriptionId, int docstatus) {
+            String customer, List<Map<String, Object>> items, SalesOrderSchemas.CreateOrderRequest req, int docstatus) {
         Map<String, Object> body = new HashMap<>();
         body.put(F_DOCTYPE,      DOCTYPE);
         body.put(F_CUSTOMER,     customer);
@@ -316,10 +319,19 @@ public class SalesOrderService {
         body.put(F_IS_POS,       0);
         body.put("docstatus",    docstatus);
         body.put(F_ITEMS,        items);
-        if (StringUtils.hasText(prescriptionId)) {
-            body.put(F_REMARKS, "Prescription: " + prescriptionId);
+        Enums.SaleType saleType = resolveSaleType(req);
+        body.put(F_PIMS_SALE_TYPE, saleType.jsonName());
+        if (StringUtils.hasText(req.prescriptionId())) {
+            body.put(F_PIMS_PRESCRIPTION_ID, req.prescriptionId().trim());
         }
         return body;
+    }
+
+    private static Enums.SaleType resolveSaleType(SalesOrderSchemas.CreateOrderRequest req) {
+        if (req.saleType() != null) {
+            return req.saleType();
+        }
+        return StringUtils.hasText(req.prescriptionId()) ? Enums.SaleType.prescription : Enums.SaleType.otc;
     }
 
     /**
@@ -330,8 +342,8 @@ public class SalesOrderService {
      */
     private Mono<Map<String, Object>> buildInvoiceBodyWithTax(
             String tenantId, String customer, List<Map<String, Object>> items,
-            String prescriptionId, int docstatus) {
-        Map<String, Object> base = buildInvoiceBody(customer, items, prescriptionId, docstatus);
+            SalesOrderSchemas.CreateOrderRequest req, int docstatus) {
+        Map<String, Object> base = buildInvoiceBody(customer, items, req, docstatus);
         return taxConfigService.getDefaultTaxTemplateName(tenantId)
                 .map(info -> {
                     base.put("taxes_and_charges", info.name());
@@ -372,6 +384,12 @@ public class SalesOrderService {
         if (doc.taxes() != null && !doc.taxes().isEmpty()) {
             body.put("taxes", taxConfigService.toInvoiceTaxRows(doc.taxes()));
         }
+        if (StringUtils.hasText(doc.customPimsPrescriptionId())) {
+            body.put(F_PIMS_PRESCRIPTION_ID, doc.customPimsPrescriptionId());
+        }
+        if (StringUtils.hasText(doc.customPimsSaleType())) {
+            body.put(F_PIMS_SALE_TYPE, doc.customPimsSaleType());
+        }
         return body;
     }
 
@@ -405,7 +423,9 @@ public class SalesOrderService {
                 lines,
                 subtotal, taxAmount, grandTotal,
                 doc.currency() != null ? doc.currency() : CURRENCY,
-                doc.creation());
+                doc.creation(),
+                doc.customPimsPrescriptionId(),
+                resolveSaleTypeFromDoc(doc));
     }
 
     private SalesOrderSchemas.OrderSummary toOrderSummary(ErpNextDoc doc) {
@@ -416,7 +436,18 @@ public class SalesOrderService {
                 doc.grandTotal() != null ? doc.grandTotal() : 0,
                 doc.totalQty() != null ? (int) Math.round(doc.totalQty()) : 0,
                 doc.currency() != null ? doc.currency() : CURRENCY,
-                doc.creation());
+                doc.creation(),
+                doc.customPimsPrescriptionId(),
+                resolveSaleTypeFromDoc(doc));
+    }
+
+    private static Enums.SaleType resolveSaleTypeFromDoc(ErpNextDoc doc) {
+        if (StringUtils.hasText(doc.customPimsSaleType())) {
+            return Enums.SaleType.fromJson(doc.customPimsSaleType());
+        }
+        return StringUtils.hasText(doc.customPimsPrescriptionId())
+                ? Enums.SaleType.prescription
+                : Enums.SaleType.otc;
     }
 
     private static List<SalesOrderSchemas.OrderLineItem> extractLineItems(List<Map<String, Object>> items) {

@@ -282,6 +282,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/SalesReportResponse'
 
+  /inventory/stock-report:
+    get:
+      tags: [Stock]
+      operationId: getStockReport
+      summary: Flat stock report by product and batch
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: expiring_within_days
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated stock report rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockReportResponse'
+
+  /inventory/revenue:
+    get:
+      tags: [Revenue]
+      operationId: getRevenueReport
+      summary: Revenue dashboard KPIs with Rx/OTC split
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            description: Rolling window in days (30, 90, or custom)
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Revenue dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevenueReportResponse'
+
   /inventory/products/{product_id}/batches:
     get:
       tags: [Batches]
@@ -709,6 +770,54 @@ components:
         total_revenue: { type: number, format: double }
         total_units: { type: integer }
         currency: { type: string, example: KES }
+
+    StockReportResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockReportRow'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    StockReportRow:
+      type: object
+      properties:
+        product_name: { type: string }
+        batch_number: { type: string }
+        available_stock: { type: number, format: double }
+        unit_price: { type: number, format: double }
+        stock_value: { type: number, format: double }
+        expiry_date: { type: string, format: date }
+        status: { type: string }
+        out_of_stock_date: { type: string, format: date }
+        reorder_level: { type: number, format: double }
+        days_out_of_stock: { type: integer, format: int64 }
+
+    RevenueReportResponse:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+            days: { type: integer }
+        total_revenue: { type: number, format: double }
+        total_transactions: { type: integer, format: int64 }
+        avg_order_value: { type: number, format: double }
+        prescription_transactions:
+          $ref: '#/components/schemas/TransactionBucket'
+        otc_transactions:
+          $ref: '#/components/schemas/TransactionBucket'
+        currency: { type: string, example: KES }
+
+    TransactionBucket:
+      type: object
+      properties:
+        count: { type: integer, format: int64 }
+        revenue: { type: number, format: double }
 
     Batch:
       type: object

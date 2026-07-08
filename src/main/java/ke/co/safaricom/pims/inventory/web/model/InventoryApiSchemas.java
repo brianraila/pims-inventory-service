@@ -73,6 +73,7 @@ public final class InventoryApiSchemas {
             Double totalValue,
             Double sellingPrice,
             Double orderFrequency,
+            Double itemsSold,
             double reorderLevel,
             List<ProductListBatch> batches) {}
 

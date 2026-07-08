@@ -107,7 +107,7 @@ class SalesOrderServiceTest {
     }
 
     private SalesOrderSchemas.CreateOrderRequest createRequest(UUID productId, double qty, double unitPrice) {
-        return new SalesOrderSchemas.CreateOrderRequest("Jane Doe", null,
+        return new SalesOrderSchemas.CreateOrderRequest("Jane Doe", null, null,
                 List.of(new SalesOrderSchemas.CreateOrderRequest.OrderItem(productId, qty, unitPrice)));
     }
 

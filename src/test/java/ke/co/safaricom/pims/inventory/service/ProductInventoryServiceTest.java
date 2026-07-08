@@ -293,6 +293,8 @@ class ProductInventoryServiceTest {
                     assertThat(resp.data().get(1).productName()).isEqualTo("Alpha Drug");
                     assertThat(resp.data().get(0).orderFrequency()).isEqualTo(200.0);
                     assertThat(resp.data().get(1).orderFrequency()).isEqualTo(30.0);
+                    assertThat(resp.data().get(0).itemsSold()).isEqualTo(200.0);
+                    assertThat(resp.data().get(1).itemsSold()).isEqualTo(30.0);
                 })
                 .verifyComplete();
     }

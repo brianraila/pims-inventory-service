@@ -18,9 +18,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -128,6 +130,48 @@ public class InventoryService {
                 .map(response -> response.data().stream()
                         .map(mapper::toBatchResponse)
                         .toList());
+    }
+
+    /**
+     * Finds the most recent Stock Ledger Entry date where quantity after transaction reached zero
+     * for the given item (and optional batch).
+     */
+    public Mono<String> findLastOutOfStockDate(String tenantId, String itemCode, String batchNo) {
+        if (!StringUtils.hasText(itemCode)) {
+            return Mono.empty();
+        }
+        List<String> filters = new ArrayList<>();
+        filters.add("[\"item_code\",\"=\",\"" + itemCode.replace("\"", "\\\"") + "\"]");
+        if (StringUtils.hasText(batchNo)) {
+            filters.add("[\"batch_no\",\"=\",\"" + batchNo.replace("\"", "\\\"") + "\"]");
+        }
+        Map<String, String> params = new HashMap<>();
+        params.put(PARAM_FIELDS, "[\"posting_date\",\"qty_after_transaction\"]");
+        params.put(PARAM_FILTERS, "[" + String.join(",", filters) + "]");
+        params.put("order_by", "posting_date desc");
+        params.put("limit_page_length", "50");
+
+        return router.getList(tenantId, "Stock Ledger Entry", params, LEDGER_LIST_TYPE)
+                .mapNotNull(response -> response.data().stream()
+                        .filter(row -> {
+                            Object qty = row.get("qty_after_transaction");
+                            return toLedgerDouble(qty) <= 0;
+                        })
+                        .map(row -> Objects.toString(row.get("posting_date"), null))
+                        .filter(StringUtils::hasText)
+                        .findFirst()
+                        .orElse(null))
+                .onErrorResume(ex -> Mono.empty());
+    }
+
+    private static double toLedgerDouble(Object value) {
+        if (value == null) return 0;
+        if (value instanceof Number n) return n.doubleValue();
+        try {
+            return Double.parseDouble(value.toString());
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
     }
 
     // ---- Stock Adjustments --------------------------------------------------
@@ -243,6 +287,9 @@ public class InventoryService {
 
     // frappe.client.submit is an /api/method/* RPC — Frappe wraps its return value in
     // {"message": ...}, not the {"data": ...} envelope used by /api/resource/* endpoints.
+    private static final ParameterizedTypeReference<ErpNextListResponse<Map<String, Object>>> LEDGER_LIST_TYPE =
+            new ParameterizedTypeReference<>() {};
+
     private static final ParameterizedTypeReference<ErpNextMessageResponse<ErpNextDoc>> SUBMIT_TYPE =
             new ParameterizedTypeReference<>() {};
 }

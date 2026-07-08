@@ -25,8 +25,10 @@ public final class SalesOrderSchemas {
              * passes its ERPNext name here; blank defaults to "Walk-in Customer".
              */
             String customerName,
-            /** Optional prescription reference stored in remarks. */
+            /** Optional prescription reference persisted on the Sales Invoice. */
             String prescriptionId,
+            /** Optional sale channel; auto-derived from prescription_id when omitted. */
+            Enums.SaleType saleType,
             @NotEmpty @Valid List<OrderItem> items
     ) {
         @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
@@ -88,7 +90,9 @@ public final class SalesOrderSchemas {
             double taxAmount,
             double grandTotal,
             String currency,
-            String createdAt
+            String createdAt,
+            String prescriptionId,
+            Enums.SaleType saleType
     ) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
@@ -100,7 +104,9 @@ public final class SalesOrderSchemas {
             double grandTotal,
             int totalQty,
             String currency,
-            String createdAt
+            String createdAt,
+            String prescriptionId,
+            Enums.SaleType saleType
     ) {}
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)

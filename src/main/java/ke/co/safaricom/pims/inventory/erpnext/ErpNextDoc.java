@@ -124,5 +124,9 @@ public record ErpNextDoc(
         @JsonProperty("mode_of_payment") String modeOfPayment,
         @JsonProperty("reference_no") String referenceNo,
         @JsonProperty("reference_date") String referenceDate,
-        @JsonProperty("party") String party
+        @JsonProperty("party") String party,
+
+        // --- Sales Invoice (PMIS custom) ---
+        @JsonProperty("custom_pims_prescription_id") String customPimsPrescriptionId,
+        @JsonProperty("custom_pims_sale_type") String customPimsSaleType
 ) {}
