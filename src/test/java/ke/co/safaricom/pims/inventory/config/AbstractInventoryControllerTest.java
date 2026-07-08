@@ -7,16 +7,20 @@ import ke.co.safaricom.pims.inventory.service.CategoryService;
 import ke.co.safaricom.pims.inventory.service.OrderPaymentService;
 import ke.co.safaricom.pims.inventory.service.PurchaseOrderService;
 import ke.co.safaricom.pims.inventory.service.ReceiptService;
+import ke.co.safaricom.pims.inventory.service.RevenueReportService;
 import ke.co.safaricom.pims.inventory.service.SalesOrderService;
 import ke.co.safaricom.pims.inventory.service.SalesReportService;
+import ke.co.safaricom.pims.inventory.service.StockReportService;
 import ke.co.safaricom.pims.inventory.service.SupplierService;
 import ke.co.safaricom.pims.inventory.web.api.InventoryAdjustmentController;
 import ke.co.safaricom.pims.inventory.web.api.InventoryBatchController;
 import ke.co.safaricom.pims.inventory.web.api.InventoryCategoryController;
 import ke.co.safaricom.pims.inventory.web.api.InventoryProductController;
 import ke.co.safaricom.pims.inventory.web.api.ManufacturersController;
+import ke.co.safaricom.pims.inventory.web.api.RevenueReportController;
 import ke.co.safaricom.pims.inventory.web.api.SalesOrderController;
 import ke.co.safaricom.pims.inventory.web.api.SalesReportController;
+import ke.co.safaricom.pims.inventory.web.api.StockReportController;
 import ke.co.safaricom.pims.inventory.web.api.SupplierController;
 import ke.co.safaricom.pims.inventory.web.api.SupplierGroupController;
 import ke.co.safaricom.pims.inventory.web.api.TerminologyController;
@@ -45,6 +49,8 @@ import static org.mockito.Mockito.when;
             TerminologyController.class,
             SalesOrderController.class,
             SalesReportController.class,
+            StockReportController.class,
+            RevenueReportController.class,
             ManufacturersController.class,
             InventoryAdjustmentController.class,
             PurchaseOrderController.class,
@@ -69,6 +75,12 @@ public abstract class AbstractInventoryControllerTest {
 
     @MockBean
     protected SalesReportService salesReportService;
+
+    @MockBean
+    protected StockReportService stockReportService;
+
+    @MockBean
+    protected RevenueReportService revenueReportService;
 
     @MockBean
     protected OrderPaymentService orderPaymentService;

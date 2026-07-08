@@ -17,6 +17,8 @@ class InventoryOpenApiYamlContractTest {
         String yaml = new String(resource.getContentAsByteArray(), StandardCharsets.UTF_8);
         assertThat(yaml).contains("/inventory/products:");
         assertThat(yaml).contains("/inventory/sales:");
+        assertThat(yaml).contains("/inventory/stock-report:");
+        assertThat(yaml).contains("/inventory/revenue:");
         assertThat(yaml).contains("manufacturer_id");
         assertThat(yaml).contains("/inventory/purchase-orders:");
         assertThat(yaml).contains("PMIS");

@@ -130,7 +130,8 @@ public class SalesOrderController {
             @PathVariable("order_id") String orderId) {
         String dispensingPharmacist = dispensingPharmacistName(auth);
         return tenants.resolveTenantId(auth, exchange)
-                .flatMap(t -> receiptService.generateReceipt(t, orderId, dispensingPharmacist))
+                .flatMap(t -> receiptService.generateReceipt(t, orderId, dispensingPharmacist)
+                        .flatMap(pdf -> salesOrderService.markReadyForCollection(t, orderId).thenReturn(pdf)))
                 .map(pdf -> ResponseEntity.ok()
                         .contentType(MediaType.APPLICATION_PDF)
                         .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + orderId + "-receipt.pdf\"")
