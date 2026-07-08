@@ -10,7 +10,6 @@ import ke.co.safaricom.pims.inventory.api.dto.SupplierResponse;
 import ke.co.safaricom.pims.inventory.security.TenantContextResolver;
 import ke.co.safaricom.pims.inventory.service.SupplierService;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -77,11 +76,11 @@ public class SupplierController {
     }
 
     @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete a supplier")
-    public Mono<ResponseEntity<Void>> delete(Authentication auth, ServerWebExchange exchange,
-                                             @PathVariable String id) {
+    public Mono<Void> delete(Authentication auth, ServerWebExchange exchange,
+                             @PathVariable String id) {
         return tenants.resolveTenantId(auth, exchange)
-                .flatMap(tenantId -> supplierService.deleteSupplier(tenantId, id))
-                .thenReturn(ResponseEntity.noContent().build());
+                .flatMap(tenantId -> supplierService.deleteSupplier(tenantId, id));
     }
 }

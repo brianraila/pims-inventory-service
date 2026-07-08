@@ -809,7 +809,7 @@ public class ProductInventoryService {
      * Derives the ERPNext Standard Selling rate from explicit selling price or markup on unit cost.
      * {@code selling_price} wins when both are supplied; {@code markup} is a percentage (e.g. 30 → 30%).
      */
-    static Double resolveSellingPrice(Double unitCost, Double markup, Double sellingPrice) {
+    public static Double resolveSellingPrice(Double unitCost, Double markup, Double sellingPrice) {
         if (sellingPrice != null && sellingPrice > 0) {
             return roundMoney(sellingPrice);
         }

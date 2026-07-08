@@ -29,6 +29,9 @@ tags:
   - name: Terminology Service
   - name: Manufacturers
   - name: Categories
+  - name: Suppliers
+  - name: Supplier Groups
+  - name: Metadata
 
 security:
   - BearerAuth: []
@@ -102,6 +105,175 @@ paths:
     delete:
       tags: [Categories]
       operationId: deleteCategory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+
+  /inventory/suppliers:
+    get:
+      tags: [Suppliers]
+      operationId: listSuppliers
+      summary: List suppliers for the tenant
+      description: |
+        Paginated supplier list with optional server-side name search.
+        Response bodies use **camelCase** JSON properties.
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Partial match on supplier name
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Paginated suppliers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierPage'
+    post:
+      tags: [Suppliers]
+      operationId: createSupplier
+      summary: Create a supplier in ERPNext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+
+  /inventory/suppliers/{id}:
+    get:
+      tags: [Suppliers]
+      operationId: getSupplier
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ERPNext Supplier document name
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+    put:
+      tags: [Suppliers]
+      operationId: updateSupplier
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+    delete:
+      tags: [Suppliers]
+      operationId: deleteSupplier
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+
+  /inventory/supplier-groups:
+    get:
+      tags: [Supplier Groups]
+      operationId: listSupplierGroups
+      summary: List supplier groups for the tenant
+      responses:
+        '200':
+          description: Supplier groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupplierGroup'
+    post:
+      tags: [Supplier Groups]
+      operationId: createSupplierGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierGroupRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierGroup'
+
+  /inventory/supplier-groups/{id}:
+    put:
+      tags: [Supplier Groups]
+      operationId: updateSupplierGroup
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierGroupRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierGroup'
+    delete:
+      tags: [Supplier Groups]
+      operationId: deleteSupplierGroup
       parameters:
         - name: id
           in: path
@@ -449,6 +621,7 @@ paths:
     post:
       tags: [Stock Adjustments]
       operationId: adjustStock
+      summary: Submit stock adjustment for batch
       parameters:
         - $ref: '#/components/parameters/ProductIdParam'
       requestBody:
@@ -531,6 +704,23 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Manufacturer'
+
+  /inventory/meta/suppliers:
+    get:
+      tags: [Metadata]
+      operationId: listSupplierMeta
+      summary: List active suppliers for dropdown pickers
+      description: |
+        Lightweight supplier lookup for product create, batch receipt, and purchase order forms.
+        Returns only **active** suppliers (`disabled = 0`), up to 200 rows.
+        Response uses snake_case (`supplier_name`) inside the `data` envelope.
+      responses:
+        '200':
+          description: Active suppliers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierMetaListResponse'
 
   /inventory/purchase-orders:
     get:
@@ -648,6 +838,93 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Category'
+
+    Supplier:
+      type: object
+      properties:
+        id: { type: string, description: ERPNext Supplier document name }
+        supplierName: { type: string }
+        supplierGroup: { type: string }
+        supplierType: { type: string, enum: [Company, Individual] }
+        registrationNumber: { type: string, description: PPB / facility registration (ERPNext tax_id) }
+        country: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        county: { type: string }
+        street: { type: string }
+        licenseNumber: { type: string }
+        licenseType: { type: string }
+        licenseValidity: { type: string }
+        ownership: { type: string }
+        notes: { type: string }
+        details: { type: string, description: Raw supplier_details text from ERPNext }
+        disabled: { type: boolean }
+        status: { type: string, enum: [Active, Disabled] }
+        createdBy: { type: string }
+        modifiedBy: { type: string }
+        createdAt: { type: string }
+        modifiedAt: { type: string }
+
+    CreateSupplierRequest:
+      type: object
+      required: [supplierName]
+      properties:
+        supplierName: { type: string }
+        supplierGroup: { type: string }
+        supplierType: { type: string, enum: [Company, Individual] }
+        registrationNumber: { type: string }
+        licenseNumber: { type: string }
+        licenseType: { type: string }
+        licenseValidity: { type: string }
+        ownership: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        county: { type: string }
+        street: { type: string }
+        country: { type: string }
+        notes: { type: string }
+        disabled: { type: boolean }
+
+    SupplierPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Supplier'
+        page: { type: integer }
+        size: { type: integer }
+        hasNext: { type: boolean }
+        hasPrevious: { type: boolean }
+
+    SupplierGroup:
+      type: object
+      properties:
+        id: { type: string, description: ERPNext Supplier Group document name }
+        name: { type: string }
+        parent: { type: string }
+        isGroup: { type: boolean }
+
+    CreateSupplierGroupRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        parent: { type: string, description: Parent supplier group; defaults to configured root when omitted }
+
+    SupplierMetaOption:
+      type: object
+      properties:
+        name: { type: string, description: ERPNext Supplier document name }
+        supplier_name: { type: string, description: Display name }
+
+    SupplierMetaListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupplierMetaOption'
 
     ProductStatus:
       type: string
