@@ -2,12 +2,15 @@ package ke.co.safaricom.pims.inventory.service;
 
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.web.model.Enums;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -21,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Shared ERPNext Sales Invoice / Payment Entry fetch helpers used by revenue and sales report services.
@@ -28,25 +32,42 @@ import java.util.Map;
 @Component
 public class SalesInvoiceReportSupport {
 
+    private static final Logger log = LoggerFactory.getLogger(SalesInvoiceReportSupport.class);
+
     public static final String CURRENCY = "KES";
     public static final int FETCH_PAGE_SIZE = 500;
 
     private static final String SI_DOCTYPE = "Sales Invoice";
     private static final String SII_DOCTYPE = "Sales Invoice Item";
     private static final String PE_DOCTYPE = "Payment Entry";
+    private static final String LIST_SALES_INVOICES_METHOD = "pims.api.reports.list_sales_invoices";
+    private static final String LIST_SALES_INVOICE_ITEMS_METHOD = "pims.api.reports.list_sales_invoice_items";
 
     private static final String ANALYTICS_INVOICE_FIELDS =
             "[\"name\",\"posting_date\",\"currency\",\"docstatus\",\"status\",\"grand_total\","
                     + "\"net_total\",\"total_taxes_and_charges\"]";
 
+    private static final String PIMS_ANALYTICS_INVOICE_FIELDS =
+            "[\"name\",\"posting_date\",\"currency\",\"docstatus\",\"status\",\"grand_total\","
+                    + "\"net_total\",\"total_taxes_and_charges\",\"pims_prescription_id\","
+                    + "\"pims_sale_type\",\"pims_order_status\"]";
+
     private static final String MINIMAL_INVOICE_FIELDS =
             "[\"name\",\"posting_date\",\"currency\",\"docstatus\",\"status\"]";
+
+    private static final String PIMS_MINIMAL_INVOICE_FIELDS =
+            "[\"name\",\"posting_date\",\"currency\",\"docstatus\",\"status\","
+                    + "\"pims_prescription_id\",\"pims_sale_type\",\"pims_order_status\"]";
 
     private static final ParameterizedTypeReference<ErpNextListResponse<ErpNextDoc>> DOC_LIST_TYPE =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ErpNextSingleResponse<ErpNextDoc>> DOC_SINGLE_TYPE =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ErpNextListResponse<Map<String, Object>>> MAP_LIST_TYPE =
+            new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<List<ErpNextDoc>>> REPORT_API_TYPE =
+            new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ErpNextMessageResponse<List<Map<String, Object>>>> ITEM_REPORT_API_TYPE =
             new ParameterizedTypeReference<>() {};
 
     private static final DateTimeFormatter DD_MM_YY = DateTimeFormatter.ofPattern("dd-MM-yy");
@@ -69,10 +90,61 @@ public class SalesInvoiceReportSupport {
     }
 
     /**
-     * ERPNext list queries reject {@code custom_pims_*} in the {@code fields} filter, but getOne
-     * returns them. Re-fetch each invoice in full when Rx/OTC classification is required.
+     * Loads invoices with Rx/OTC metadata via the PIMS report API when available,
+     * otherwise falls back to native {@code pims_*} list fields, then N+1 getOne.
      */
     public Mono<List<ErpNextDoc>> fetchInvoicesWithSaleMetadata(
+            String tenantId, String from, String to, String status, boolean analyticsFields) {
+        return fetchInvoicesViaReportApi(tenantId, from, to, status, analyticsFields)
+                .onErrorResume(ex -> {
+                    log.debug("PIMS report API unavailable for tenant {}: {}", tenantId, ex.toString());
+                    return fetchInvoicesViaPimsListFields(tenantId, from, to, status, analyticsFields)
+                            .onErrorResume(listEx -> {
+                                log.debug("PIMS list-field fallback failed for tenant {}: {}",
+                                        tenantId, listEx.toString());
+                                return fetchInvoicesWithGetOneFallback(
+                                        tenantId, from, to, status, analyticsFields);
+                            });
+                });
+    }
+
+    private Mono<List<ErpNextDoc>> fetchInvoicesViaReportApi(
+            String tenantId, String from, String to, String status, boolean analyticsFields) {
+        return fetchReportApiPage(tenantId, from, to, status, analyticsFields, 0, new ArrayList<>());
+    }
+
+    private Mono<List<ErpNextDoc>> fetchReportApiPage(
+            String tenantId,
+            String from,
+            String to,
+            String status,
+            boolean analyticsFields,
+            int offset,
+            List<ErpNextDoc> accumulated) {
+        Map<String, Object> body = reportApiBody(from, to, status, analyticsFields, offset);
+        return router.callMethod(tenantId, LIST_SALES_INVOICES_METHOD, body, REPORT_API_TYPE)
+                .map(resp -> resp.message() != null ? resp.message() : List.<ErpNextDoc>of())
+                .flatMap(page -> {
+                    accumulated.addAll(page);
+                    if (page.size() < FETCH_PAGE_SIZE) {
+                        return Mono.just(accumulated);
+                    }
+                    return fetchReportApiPage(
+                            tenantId, from, to, status, analyticsFields, offset + page.size(), accumulated);
+                });
+    }
+
+    private Mono<List<ErpNextDoc>> fetchInvoicesViaPimsListFields(
+            String tenantId, String from, String to, String status, boolean analyticsFields) {
+        Map<String, String> params = new HashMap<>();
+        params.put("fields", analyticsFields ? PIMS_ANALYTICS_INVOICE_FIELDS : PIMS_MINIMAL_INVOICE_FIELDS);
+        params.put("order_by", "posting_date desc");
+        params.put("limit_page_length", String.valueOf(FETCH_PAGE_SIZE));
+        params.put("filters", buildInvoiceFilters(from, to, status));
+        return fetchDocPage(tenantId, SI_DOCTYPE, params, 0, new ArrayList<>());
+    }
+
+    private Mono<List<ErpNextDoc>> fetchInvoicesWithGetOneFallback(
             String tenantId, String from, String to, String status, boolean analyticsFields) {
         return fetchInvoices(tenantId, from, to, status, analyticsFields)
                 .flatMap(invoices -> {
@@ -86,11 +158,40 @@ public class SalesInvoiceReportSupport {
                 });
     }
 
+    private static Map<String, Object> reportApiBody(
+            String from, String to, String status, boolean analyticsFields, int offset) {
+        Map<String, Object> body = new HashMap<>();
+        if (StringUtils.hasText(from)) {
+            body.put("from_date", from.trim());
+        }
+        if (StringUtils.hasText(to)) {
+            body.put("to_date", to.trim());
+        }
+        if (StringUtils.hasText(status)) {
+            body.put("status", status.trim());
+        }
+        body.put("analytics_fields", analyticsFields ? 1 : 0);
+        body.put("limit_start", offset);
+        body.put("limit_page_length", FETCH_PAGE_SIZE);
+        return body;
+    }
+
     public Mono<List<Map<String, Object>>> fetchInvoiceItems(String tenantId, List<String> parents) {
         if (parents == null || parents.isEmpty()) {
             return Mono.just(List.of());
         }
-        return fetchInvoiceItemPage(tenantId, parents, 0, new ArrayList<>());
+        return fetchInvoiceItemsViaList(tenantId, parents)
+                .flatMap(rows -> {
+                    if (rowsHaveItemData(rows)) {
+                        return Mono.just(rows);
+                    }
+                    return fetchInvoiceItemsViaReportApi(tenantId, parents)
+                            .onErrorResume(ex -> {
+                                log.debug("PIMS invoice-item report API unavailable for tenant {}: {}",
+                                        tenantId, ex.toString());
+                                return fetchInvoiceItemsViaGetOne(tenantId, parents);
+                            });
+                });
     }
 
     /**
@@ -238,6 +339,67 @@ public class SalesInvoiceReportSupport {
                 });
     }
 
+    private Mono<List<Map<String, Object>>> fetchInvoiceItemsViaReportApi(
+            String tenantId, List<String> parents) {
+        return fetchInvoiceItemReportPage(tenantId, parents, 0, new ArrayList<>());
+    }
+
+    private Mono<List<Map<String, Object>>> fetchInvoiceItemReportPage(
+            String tenantId,
+            List<String> parents,
+            int offset,
+            List<Map<String, Object>> accumulated) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("parents", parents);
+        body.put("limit_start", offset);
+        body.put("limit_page_length", FETCH_PAGE_SIZE);
+        return router.callMethod(tenantId, LIST_SALES_INVOICE_ITEMS_METHOD, body, ITEM_REPORT_API_TYPE)
+                .map(resp -> resp.message() != null ? resp.message() : List.<Map<String, Object>>of())
+                .flatMap(page -> {
+                    accumulated.addAll(page);
+                    if (page.size() < FETCH_PAGE_SIZE) {
+                        return Mono.just(accumulated);
+                    }
+                    return fetchInvoiceItemReportPage(
+                            tenantId, parents, offset + page.size(), accumulated);
+                });
+    }
+
+    private Mono<List<Map<String, Object>>> fetchInvoiceItemsViaList(
+            String tenantId, List<String> parents) {
+        return fetchInvoiceItemPage(tenantId, parents, 0, new ArrayList<>());
+    }
+
+    private Mono<List<Map<String, Object>>> fetchInvoiceItemsViaGetOne(
+            String tenantId, List<String> parents) {
+        return Flux.fromIterable(parents)
+                .flatMap(name -> router.getOne(tenantId, SI_DOCTYPE, name, DOC_SINGLE_TYPE)
+                        .map(ErpNextSingleResponse::data), 8)
+                .flatMapIterable(inv -> {
+                    List<Map<String, Object>> lines = inv.items() != null ? inv.items() : List.of();
+                    List<Map<String, Object>> withParent = new ArrayList<>(lines.size());
+                    for (Map<String, Object> line : lines) {
+                        Map<String, Object> row = new HashMap<>(line);
+                        row.putIfAbsent("parent", inv.name());
+                        withParent.add(row);
+                    }
+                    return withParent;
+                })
+                .collectList();
+    }
+
+    private static boolean rowsHaveItemData(List<Map<String, Object>> rows) {
+        if (rows.isEmpty()) {
+            return false;
+        }
+        for (Map<String, Object> row : rows) {
+            if (StringUtils.hasText(Objects.toString(row.get("item_code"), null))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private Mono<List<Map<String, Object>>> fetchInvoiceItemPage(
             String tenantId, List<String> parents, int offset, List<Map<String, Object>> accumulated) {
         Map<String, String> params = new HashMap<>();
@@ -262,7 +424,7 @@ public class SalesInvoiceReportSupport {
         }
         Map<String, String> params = new HashMap<>();
         params.put("fields",
-                "[\"name\",\"mode_of_payment\",\"paid_amount\",\"posting_date\",\"docstatus\",\"currency\"]");
+                "[\"name\",\"mode_of_payment\",\"paid_amount\",\"posting_date\",\"docstatus\"]");
         params.put("filters", "[[\"Payment Entry Reference\",\"reference_name\",\"in\","
                 + jsonStringArray(chunks.get(index)) + "],[\"docstatus\",\"=\",1]]");
         params.put("limit_page_length", String.valueOf(FETCH_PAGE_SIZE));

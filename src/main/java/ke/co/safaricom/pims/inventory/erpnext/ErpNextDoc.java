@@ -1,5 +1,6 @@
 package ke.co.safaricom.pims.inventory.erpnext;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -127,7 +128,13 @@ public record ErpNextDoc(
         @JsonProperty("party") String party,
 
         // --- Sales Invoice (PMIS custom) ---
-        @JsonProperty("custom_pims_prescription_id") String customPimsPrescriptionId,
-        @JsonProperty("custom_pims_sale_type") String customPimsSaleType,
-        @JsonProperty("custom_pims_order_status") String customPimsOrderStatus
+        @JsonProperty("custom_pims_prescription_id")
+        @JsonAlias("pims_prescription_id")
+        String customPimsPrescriptionId,
+        @JsonProperty("custom_pims_sale_type")
+        @JsonAlias("pims_sale_type")
+        String customPimsSaleType,
+        @JsonProperty("custom_pims_order_status")
+        @JsonAlias("pims_order_status")
+        String customPimsOrderStatus
 ) {}

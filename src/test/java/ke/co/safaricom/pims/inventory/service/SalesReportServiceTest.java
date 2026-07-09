@@ -23,6 +23,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +49,7 @@ class SalesReportServiceTest {
     @BeforeEach
     void setUp() {
         service = new SalesReportService(new SalesInvoiceReportSupport(router), inventoryService);
+        stubReportApiInvoiceItemsFallback();
     }
 
     @Test
@@ -101,6 +103,16 @@ class SalesReportServiceTest {
                     assertThat(resp.summary().totalUnits()).isZero();
                 })
                 .verifyComplete();
+    }
+
+
+    private void stubReportApiInvoiceItemsFallback() {
+        lenient().when(router.callMethod(
+                        eq(TENANT),
+                        eq("pims.api.reports.list_sales_invoice_items"),
+                        anyMap(),
+                        any(ParameterizedTypeReference.class)))
+                .thenReturn(Mono.error(new RuntimeException("test: use ERPNext list fallback")));
     }
 
     private ErpNextDoc invoiceDoc(String name, String postingDate) {

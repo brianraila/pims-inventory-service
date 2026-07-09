@@ -5,6 +5,7 @@ import ke.co.safaricom.pims.inventory.api.dto.BatchResponse;
 import ke.co.safaricom.pims.inventory.api.dto.InventoryItemResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextDoc;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextListResponse;
+import ke.co.safaricom.pims.inventory.erpnext.ErpNextMessageResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextSingleResponse;
 import ke.co.safaricom.pims.inventory.erpnext.ErpNextTenantRouter;
 import ke.co.safaricom.pims.inventory.web.util.StableEntityIds;
@@ -23,6 +24,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,6 +46,7 @@ class RevenueAnalyticsServiceTest {
     @BeforeEach
     void setUp() {
         service = new RevenueAnalyticsService(new SalesInvoiceReportSupport(router), inventoryService);
+        stubReportApiInvoiceItemsFallback();
     }
 
     @Test
@@ -191,8 +194,7 @@ class RevenueAnalyticsServiceTest {
         ErpNextDoc otc = invoice(Map.of(
                 "name", "INV-OTC", "posting_date", "2026-01-12", "grand_total", 50.0,
                 "currency", "KES", "docstatus", 1, "custom_pims_sale_type", "otc"));
-        stubSinglePeriodInvoices(List.of(rx, otc));
-        stubInvoiceGetOne(rx, otc);
+        stubInvoicesWithSaleMetadata(List.of(rx, otc));
 
         StepVerifier.create(service.getTransactionTypes(TENANT, null, "2026-01-01", "2026-01-31", null))
                 .assertNext(resp -> {
@@ -281,6 +283,16 @@ class RevenueAnalyticsServiceTest {
                 .verifyComplete();
     }
 
+
+    private void stubReportApiInvoiceItemsFallback() {
+        lenient().when(router.callMethod(
+                        eq(TENANT),
+                        eq("pims.api.reports.list_sales_invoice_items"),
+                        anyMap(),
+                        any(ParameterizedTypeReference.class)))
+                .thenReturn(Mono.error(new RuntimeException("test: use ERPNext list fallback")));
+    }
+
     // ---- helpers --------------------------------------------------------------
 
     private void stubCatalog() {
@@ -296,6 +308,15 @@ class RevenueAnalyticsServiceTest {
     private void stubSinglePeriodInvoices(List<ErpNextDoc> invoices) {
         when(router.getList(eq(TENANT), eq("Sales Invoice"), anyMap(), any(ParameterizedTypeReference.class)))
                 .thenReturn(Mono.just(new ErpNextListResponse<>(invoices)));
+    }
+
+    private void stubInvoicesWithSaleMetadata(List<ErpNextDoc> invoices) {
+        when(router.callMethod(
+                        eq(TENANT),
+                        eq("pims.api.reports.list_sales_invoices"),
+                        anyMap(),
+                        any(ParameterizedTypeReference.class)))
+                .thenReturn(Mono.just(new ErpNextMessageResponse<>(invoices)));
     }
 
     private void stubInvoiceGetOne(ErpNextDoc... invoices) {
